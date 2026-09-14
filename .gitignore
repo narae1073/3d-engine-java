@@ -1,0 +1,13 @@
+# --- Gradle ---
+.gradle/
+build/
+
+# --- VS Code ---
+.vscode/
+*.code-workspace
+
+# --- Java & OS ---
+*.class
+*.log
+.DS_Store
+Thumbs.db
