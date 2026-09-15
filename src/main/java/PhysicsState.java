@@ -1,11 +1,11 @@
-// 플레이어 물리 + 슬라임 스케일 애니메이션
 public class PhysicsState {
-    public float velocityY = 0.0f;
-    public float gravity = -0.015f;
-    public float jumpStrength = 0.32f;
+    public float velocityY    = EngineConfig.Physics.VELOCITY_Y;
+    public float gravity      = EngineConfig.Physics.GRAVITY;
+    public float jumpStrength = EngineConfig.Physics.JUMP_STRENGTH;
     public boolean isGrounded = false;
     public boolean wasGrounded = true;
 
-    // 슬라임 애니메이션
-    public float scaleX = 1.0f, scaleY = 1.0f, scaleZ = 1.0f;
+    public float scaleX = EngineConfig.Physics.SCALE_INIT;
+    public float scaleY = EngineConfig.Physics.SCALE_INIT;
+    public float scaleZ = EngineConfig.Physics.SCALE_INIT;
 }

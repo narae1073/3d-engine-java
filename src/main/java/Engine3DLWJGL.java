@@ -34,45 +34,57 @@ public class Engine3DLWJGL {
         systems.add(new EditorGizmoSystem(win, camera, editor, world));
     }
 
-    public void run() { init(); loop(); cleanup(); }
+    public void run() {
+        init();
+        loop();
+        cleanup();
+    }
 
     private void init() {
-        if (!glfwInit()) throw new IllegalStateException("GLFW 초기화 실패");
+        if (!glfwInit())
+            throw new IllegalStateException("GLFW 초기화 실패");
+
         win.window = glfwCreateWindow(win.width, win.height,
-                "3D Engine - Shadows & Slime Integrated", NULL, NULL);
+                EngineConfig.Window.TITLE, NULL, NULL);
         glfwMakeContextCurrent(win.window);
-        glfwSwapInterval(1);
+        glfwSwapInterval(EngineConfig.Window.SWAP_INTERVAL);
         GL.createCapabilities();
 
         ImGui.createContext();
         state.imGuiGlfw.init(win.window, true);
-        state.imGuiGl3.init("#version 120");
-        glEnable(GL_DEPTH_TEST);
-        if (glfwRawMouseMotionSupported())
-            glfwSetInputMode(win.window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        state.imGuiGl3.init(EngineConfig.Engine.GLSL_VERSION);
 
-        for (EngineSystem s : systems) s.init();
+        glEnable(GL_DEPTH_TEST);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(win.window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
+        for (EngineSystem s : systems)
+            s.init();
     }
 
     private void update() {
         float dt = computeDeltaTime();
-        for (EngineSystem s : systems) s.update(dt);
+        for (EngineSystem s : systems)
+            s.update(dt);
     }
 
     private void render() {
-        for (EngineSystem s : systems) s.render();
+        for (EngineSystem s : systems)
+            s.render();
     }
 
     private void loop() {
         while (!glfwWindowShouldClose(win.window)) {
-            update(); render();
+            update();
+            render();
             glfwSwapBuffers(win.window);
             glfwPollEvents();
         }
     }
 
     private void cleanup() {
-        for (int i = systems.size() - 1; i >= 0; i--) systems.get(i).dispose();
+        for (int i = systems.size() - 1; i >= 0; i--)
+            systems.get(i).dispose();
         state.imGuiGl3.dispose();
         state.imGuiGlfw.dispose();
         ImGui.destroyContext();
@@ -84,8 +96,10 @@ public class Engine3DLWJGL {
         double now = glfwGetTime();
         float dt = (float) (now - lastFrameTime);
         lastFrameTime = now;
-        return Math.min(dt, 0.05f);
+        return Math.min(dt, EngineConfig.Engine.DT_CLAMP);
     }
 
-    public static void main(String[] args) { new Engine3DLWJGL().run(); }
+    public static void main(String[] args) {
+        new Engine3DLWJGL().run();
+    }
 }

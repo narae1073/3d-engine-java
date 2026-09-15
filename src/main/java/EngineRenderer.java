@@ -40,8 +40,8 @@ public class EngineRenderer implements EngineSystem {
     // 렌더 전용 상태 (이전 EngineState에서 흡수)
     // ============================================================
     // 셰도우 맵
-    private final int SHADOW_WIDTH = 2048;
-    private final int SHADOW_HEIGHT = 2048;
+    private final int SHADOW_WIDTH = EngineConfig.Render.SHADOW_WIDTH;
+    private final int SHADOW_HEIGHT = EngineConfig.Render.SHADOW_HEIGHT;
     private int depthFBO;
     private int depthMap;
 
@@ -69,19 +69,19 @@ public class EngineRenderer implements EngineSystem {
     // 지오메트리 (큐브는 정적 상수로 승격)
     // ============================================================
     private static final float[][] CUBE_VERTICES = {
-        { -0.5f, -0.5f, -0.5f }, {  0.5f, -0.5f, -0.5f }, {  0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f, -0.5f },
-        { -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f }, { -0.5f,  0.5f,  0.5f }
+            { -0.5f, -0.5f, -0.5f }, { 0.5f, -0.5f, -0.5f }, { 0.5f, 0.5f, -0.5f }, { -0.5f, 0.5f, -0.5f },
+            { -0.5f, -0.5f, 0.5f }, { 0.5f, -0.5f, 0.5f }, { 0.5f, 0.5f, 0.5f }, { -0.5f, 0.5f, 0.5f }
     };
     private static final int[][] CUBE_FACES = {
-        { 4, 5, 6, 7 }, { 1, 0, 3, 2 }, { 3, 2, 6, 7 },
-        { 4, 0, 1, 5 }, { 5, 1, 2, 6 }, { 0, 4, 7, 3 }
+            { 4, 5, 6, 7 }, { 1, 0, 3, 2 }, { 3, 2, 6, 7 },
+            { 4, 0, 1, 5 }, { 5, 1, 2, 6 }, { 0, 4, 7, 3 }
     };
     private static final float[][] CUBE_NORMALS = {
-        { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
+            { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
     };
 
     public EngineRenderer(WindowContext win, CameraState camera, LightState light,
-                          PhysicsState physics, EditorState editor, WorldState world) {
+            PhysicsState physics, EditorState editor, WorldState world) {
         this.win = win;
         this.camera = camera;
         this.light = light;
@@ -244,8 +244,10 @@ public class EngineRenderer implements EngineSystem {
     @Override
     public void render() {
         // ---------- 1. 라이트 공간 행렬 계산 ----------
-        float nearPlane = 1.0f, farPlane = 40.0f;
-        lightProjMatrix.identity().setOrtho(-15.0f, 15.0f, -15.0f, 15.0f, nearPlane, farPlane);
+        lightProjMatrix.identity().setOrtho(
+                -EngineConfig.Render.LIGHT_ORTHO_HALF, EngineConfig.Render.LIGHT_ORTHO_HALF,
+                -EngineConfig.Render.LIGHT_ORTHO_HALF, EngineConfig.Render.LIGHT_ORTHO_HALF,
+                EngineConfig.Render.LIGHT_NEAR, EngineConfig.Render.LIGHT_FAR);
 
         Vector3f lightTarget = new Vector3f(world.playerObject.pos.x, 0.0f, world.playerObject.pos.z);
         Vector3f actualLightPos = new Vector3f(
@@ -286,19 +288,27 @@ public class EngineRenderer implements EngineSystem {
 
         // ---------- 4. 메인 패스 ----------
         glViewport(0, 0, win.width, win.height);
-        glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
+        glClearColor(EngineConfig.Render.CLEAR_R,
+                EngineConfig.Render.CLEAR_G,
+                EngineConfig.Render.CLEAR_B,
+                EngineConfig.Render.CLEAR_A);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(mainShaderProgram);
 
         // 투영 행렬 (원근 ↔ 직교 lerp)
-        Matrix4f perspProj = new Matrix4f().setPerspective((float) Math.toRadians(60.0f),
-                (float) win.width / win.height, 0.1f, 100.0f);
-        float orthoSize = 6.0f;
+        Matrix4f perspProj = new Matrix4f().setPerspective(
+                (float) Math.toRadians(EngineConfig.Render.CAM_FOV_DEG),
+                (float) win.width / win.height,
+                EngineConfig.Render.CAM_NEAR,
+                EngineConfig.Render.CAM_FAR);
+
+        float orthoSize = EngineConfig.Render.ORTHO_HALF_SIZE;
         Matrix4f orthoProj = new Matrix4f().setOrtho(
                 -orthoSize * ((float) win.width / win.height),
                 orthoSize * ((float) win.width / win.height),
-                -orthoSize, orthoSize, 0.1f, 100.0f);
+                -orthoSize, orthoSize,
+                EngineConfig.Render.CAM_NEAR, EngineConfig.Render.CAM_FAR);
         projMatrix.set(perspProj).lerp(orthoProj, camera.orthoTransition);
 
         // 뷰 행렬 (에디터 ↔ 플레이 분기)
@@ -350,13 +360,15 @@ public class EngineRenderer implements EngineSystem {
         glUniformMatrix4fv(modelLoc, false, modelMatrix.get(matrixBuffer));
 
         if (isMainPass) {
-            glUniform3f(locObjectColor, 0.5f, 0.5f, 0.5f);
+            float[] c = EngineConfig.Render.COLOR_GROUND;
+            glUniform3f(locObjectColor, c[0], c[1], c[2]);
             glUniform1i(locUseLighting, 1);
         }
         drawGroundGeometry();
 
         if (isMainPass) {
-            glUniform3f(locObjectColor, 0.0f, 0.0f, 0.0f);
+            float[] c = EngineConfig.Render.COLOR_GRID;
+            glUniform3f(locObjectColor, c[0], c[1], c[2]);
             glUniform1i(locUseLighting, 0);
             drawGridGeometry();
             glUniform1i(locUseLighting, 1);
@@ -371,8 +383,8 @@ public class EngineRenderer implements EngineSystem {
 
             if (obj instanceof PlayerObject) {
                 modelMatrix.scale(obj.size.x * physics.scaleX,
-                                  obj.size.y * physics.scaleY,
-                                  obj.size.z * physics.scaleZ);
+                        obj.size.y * physics.scaleY,
+                        obj.size.z * physics.scaleZ);
                 if (isMainPass) {
                     if (physics.isGrounded)
                         glUniform3f(locObjectColor, 0.2f, 0.9f, 1.0f);
@@ -404,7 +416,7 @@ public class EngineRenderer implements EngineSystem {
         }
 
         glDisable(GL_DEPTH_TEST); // 기즈모/하이라이트가 오브젝트에 가려지지 않도록
-        glLineWidth(4.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_HIGHLIGHT);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
         LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
@@ -418,15 +430,20 @@ public class EngineRenderer implements EngineSystem {
 
         if (selObj instanceof PlayerObject) {
             highlight.scale(
-                    (selObj.size.x * physics.scaleX) * 1.02f,
-                    (selObj.size.y * physics.scaleY) * 1.02f,
-                    (selObj.size.z * physics.scaleZ) * 1.02f);
+                    (selObj.size.x * physics.scaleX) * EngineConfig.Render.HIGHLIGHT_SCALE,
+                    (selObj.size.y * physics.scaleY) * EngineConfig.Render.HIGHLIGHT_SCALE,
+                    (selObj.size.z * physics.scaleZ) * EngineConfig.Render.HIGHLIGHT_SCALE);
         } else {
-            highlight.scale(selObj.size.x * 1.02f, selObj.size.y * 1.02f, selObj.size.z * 1.02f);
+            highlight.scale(selObj.size.x * EngineConfig.Render.HIGHLIGHT_SCALE,
+                    selObj.size.y * EngineConfig.Render.HIGHLIGHT_SCALE,
+                    selObj.size.z * EngineConfig.Render.HIGHLIGHT_SCALE);
         }
 
         glUniform1i(locUseLighting, 0);
-        glUniform3f(locObjectColor, 1.0f, 1.0f, 0.0f);
+        glUniform3f(locObjectColor,
+                EngineConfig.Render.COLOR_HIGHLIGHT[0],
+                EngineConfig.Render.COLOR_HIGHLIGHT[1],
+                EngineConfig.Render.COLOR_HIGHLIGHT[2]);
         glUniformMatrix4fv(locModel, false, highlight.get(matrixBuffer));
         if (selObj instanceof PlayerObject) {
             drawSphereGeometry();
@@ -435,7 +452,7 @@ public class EngineRenderer implements EngineSystem {
         }
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glLineWidth(1.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_DEFAULT);
 
         // ---------- 기즈모 베이스 행렬 ----------
         Matrix4f gizmoBase = new Matrix4f().translate(selObj.pos.x, selObj.pos.y, selObj.pos.z);
@@ -459,7 +476,7 @@ public class EngineRenderer implements EngineSystem {
 
     // ---------- 위치 기즈모 (직선 3축) ----------
     private void renderPositionGizmo(Matrix4f base) {
-        glLineWidth(5.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_POSITION);
 
         // X축
         glUniform3f(locObjectColor,
@@ -468,7 +485,8 @@ public class EngineRenderer implements EngineSystem {
                 0.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(2, 0, 0);
+        glVertex3f(0, 0, 0);
+        glVertex3f(EngineConfig.Gizmo.AXIS_LENGTH, 0, 0);
         glEnd();
 
         // Y축
@@ -478,7 +496,8 @@ public class EngineRenderer implements EngineSystem {
                 0.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(0, 2, 0);
+        glVertex3f(0, 0, 0);
+        glVertex3f(0, EngineConfig.Gizmo.AXIS_LENGTH, 0);
         glEnd();
 
         // Z축
@@ -488,15 +507,16 @@ public class EngineRenderer implements EngineSystem {
                 1.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(0, 0, 2);
+        glVertex3f(0, 0, 0);
+        glVertex3f(0, 0, EngineConfig.Gizmo.AXIS_LENGTH);
         glEnd();
 
-        glLineWidth(1.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_DEFAULT);
     }
 
     // ---------- 스케일 기즈모 (선 + 큐브 핸들) ----------
     private void renderScaleGizmo(Matrix4f base) {
-        glLineWidth(3.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_SCALE_ROT);
 
         // X축 + 큐브
         glUniform3f(locObjectColor,
@@ -505,9 +525,12 @@ public class EngineRenderer implements EngineSystem {
                 0.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(2, 0, 0);
+        glVertex3f(0, 0, 0);
+        glVertex3f(EngineConfig.Gizmo.AXIS_LENGTH, 0, 0);
         glEnd();
-        Matrix4f cubeX = new Matrix4f(base).translate(2, 0, 0).scale(0.3f);
+        Matrix4f cubeX = new Matrix4f(base)
+                .translate(EngineConfig.Gizmo.AXIS_LENGTH, 0, 0)
+                .scale(EngineConfig.Gizmo.HANDLE_CUBE_SIZE);
         glUniformMatrix4fv(locModel, false, cubeX.get(matrixBuffer));
         drawCubeGeometry();
 
@@ -518,9 +541,11 @@ public class EngineRenderer implements EngineSystem {
                 0.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(0, 2, 0);
+        glVertex3f(0, 0, 0);
+        glVertex3f(0, EngineConfig.Gizmo.AXIS_LENGTH, 0);
         glEnd();
-        Matrix4f cubeY = new Matrix4f(base).translate(0, 2, 0).scale(0.3f);
+        Matrix4f cubeY = new Matrix4f(base).translate(0, EngineConfig.Gizmo.AXIS_LENGTH, 0)
+                .scale(EngineConfig.Gizmo.HANDLE_CUBE_SIZE);
         glUniformMatrix4fv(locModel, false, cubeY.get(matrixBuffer));
         drawCubeGeometry();
 
@@ -531,20 +556,22 @@ public class EngineRenderer implements EngineSystem {
                 1.0f);
         glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
         glBegin(GL_LINES);
-        glVertex3f(0, 0, 0); glVertex3f(0, 0, 2);
+        glVertex3f(0, 0, 0);
+        glVertex3f(0, 0, EngineConfig.Gizmo.AXIS_LENGTH);
         glEnd();
-        Matrix4f cubeZ = new Matrix4f(base).translate(0, 0, 2).scale(0.3f);
+        Matrix4f cubeZ = new Matrix4f(base).translate(0, 0, EngineConfig.Gizmo.AXIS_LENGTH)
+                .scale(EngineConfig.Gizmo.HANDLE_CUBE_SIZE);
         glUniformMatrix4fv(locModel, false, cubeZ.get(matrixBuffer));
         drawCubeGeometry();
 
-        glLineWidth(1.0f);
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_DEFAULT);
     }
 
     // ---------- 회전 기즈모 (3개의 링) ----------
     private void renderRotationGizmo(Matrix4f base) {
-        glLineWidth(3.0f);
-        float radius = 2.0f;
-        int segments = 32;
+        glLineWidth(EngineConfig.Render.LINE_WIDTH_SCALE_ROT);
+        float radius = EngineConfig.Gizmo.RING_RADIUS;
+        int segments = EngineConfig.Gizmo.RING_SEGMENTS;
 
         // X축 회전 링 (YZ 평면)
         glUniform3f(locObjectColor,
@@ -597,17 +624,17 @@ public class EngineRenderer implements EngineSystem {
             glNormal3f(CUBE_NORMALS[i][0], CUBE_NORMALS[i][1], CUBE_NORMALS[i][2]);
             for (int vertIndex : CUBE_FACES[i]) {
                 glVertex3f(CUBE_VERTICES[vertIndex][0],
-                           CUBE_VERTICES[vertIndex][1],
-                           CUBE_VERTICES[vertIndex][2]);
+                        CUBE_VERTICES[vertIndex][1],
+                        CUBE_VERTICES[vertIndex][2]);
             }
         }
         glEnd();
     }
 
     private void drawSphereGeometry() {
-        int stacks = 20;
-        int slices = 20;
-        float radius = 0.5f;
+        int stacks = EngineConfig.Render.SPHERE_STACKS;
+        int slices = EngineConfig.Render.SPHERE_SLICES;
+        float radius = EngineConfig.Render.SPHERE_RADIUS;
 
         for (int i = 0; i < stacks; i++) {
             float lat0 = (float) Math.PI * (-0.5f + (float) i / stacks);
@@ -634,22 +661,26 @@ public class EngineRenderer implements EngineSystem {
     }
 
     private void drawGroundGeometry() {
+        float h = EngineConfig.Render.GROUND_HALF;
         glBegin(GL_QUADS);
         glNormal3f(0, 1, 0);
-        glVertex3f(-30.0f, 0.0f, -30.0f);
-        glVertex3f(30.0f, 0.0f, -30.0f);
-        glVertex3f(30.0f, 0.0f, 30.0f);
-        glVertex3f(-30.0f, 0.0f, 30.0f);
+        glVertex3f(-h, 0.0f, -h);
+        glVertex3f(h, 0.0f, -h);
+        glVertex3f(h, 0.0f, h);
+        glVertex3f(-h, 0.0f, h);
         glEnd();
     }
 
     private void drawGridGeometry() {
+        int n = EngineConfig.Render.GRID_HALF_COUNT;
+        float h = EngineConfig.Render.GROUND_HALF;
+        float y = EngineConfig.Render.GRID_LINE_Y;
         glBegin(GL_LINES);
-        for (int i = -30; i <= 30; i++) {
-            glVertex3f(-30, 0.001f, i);
-            glVertex3f(30, 0.001f, i);
-            glVertex3f(i, 0.001f, -30);
-            glVertex3f(i, 0.001f, 30);
+        for (int i = -n; i <= n; i++) {
+            glVertex3f(-h, y, i);
+            glVertex3f(h, y, i);
+            glVertex3f(i, y, -h);
+            glVertex3f(i, y, h);
         }
         glEnd();
     }

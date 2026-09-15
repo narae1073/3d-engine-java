@@ -50,7 +50,9 @@ public class EditorGizmoSystem implements EngineSystem {
                 fKeyPressed = true;
                 if (editor.selectedObjectIndex >= 0 && editor.selectedObjectIndex < world.objects.size()) {
                     LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
-                    float focusDistance = Math.max(3.0f, selObj.size.length() * 2.0f);
+                    float focusDistance = Math.max(
+                            EngineConfig.Editor.FOCUS_MIN_DISTANCE,
+                            selObj.size.length() * EngineConfig.Editor.FOCUS_SIZE_FACTOR);
                     float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
                     float fy = (float) -Math.sin(camera.editorCamPitch);
                     float fz = (float) (-Math.cos(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
@@ -97,15 +99,17 @@ public class EditorGizmoSystem implements EngineSystem {
 
                 float deltaX = (float) (mouseX[0] - lastMouseX);
                 float deltaY = (float) (mouseY[0] - lastMouseY);
-                float rotSpeed = 0.005f;
+                float rotSpeed = EngineConfig.Editor.ORBIT_ROT_SPEED;
                 camera.editorCamYaw += deltaX * rotSpeed;
                 camera.editorCamPitch -= deltaY * rotSpeed;
-                camera.editorCamPitch = Math.max(-1.5f, Math.min(1.5f, camera.editorCamPitch));
+                float limit = EngineConfig.Editor.ORBIT_PITCH_LIMIT;
+                camera.editorCamPitch = Math.max(-limit, Math.min(limit, camera.editorCamPitch));
 
                 float wheel = ImGui.getIO().getMouseWheel();
                 if (wheel != 0) {
-                    orbitDistance -= wheel * (orbitDistance * 0.15f);
-                    orbitDistance = Math.max(0.5f, Math.min(50.0f, orbitDistance));
+                    orbitDistance -= wheel * (orbitDistance * EngineConfig.Editor.ORBIT_ZOOM_FACTOR);
+                    orbitDistance = Math.max(EngineConfig.Editor.ORBIT_DIST_MIN,
+                            Math.min(EngineConfig.Editor.ORBIT_DIST_MAX, orbitDistance));
                 }
 
                 float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
@@ -146,7 +150,7 @@ public class EditorGizmoSystem implements EngineSystem {
             float deltaY = (float) (mouseY[0] - lastMouseY);
 
             LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
-            float sensitivity = 0.02f;
+            float sensitivity = EngineConfig.Editor.DRAG_SENSITIVITY;
 
             float camYaw = camera.editorCamYaw;
             float camRightX = (float) Math.cos(camYaw);
@@ -182,15 +186,15 @@ public class EditorGizmoSystem implements EngineSystem {
                 selObj.pos.add(new Vector3f(axisDir).mul(moveAmount));
 
             } else if (editor.gizmoMode == 1) {
+                float minScale = EngineConfig.Editor.SCALE_MIN;
                 if (activeAxis == 1)
-                    selObj.size.x = Math.max(0.1f, selObj.size.x + mouseInput);
+                    selObj.size.x = Math.max(minScale, selObj.size.x + mouseInput);
                 else if (activeAxis == 2)
-                    selObj.size.y = Math.max(0.1f, selObj.size.y + mouseInputY);
+                    selObj.size.y = Math.max(minScale, selObj.size.y + mouseInputY);
                 else if (activeAxis == 3)
-                    selObj.size.z = Math.max(0.1f, selObj.size.z + mouseInput);
-
+                    selObj.size.z = Math.max(minScale, selObj.size.z + mouseInput);
             } else if (editor.gizmoMode == 2) {
-                float rotSpeed = 0.015f;
+                float rotSpeed = EngineConfig.Editor.ROT_DRAG_SPEED;
                 Quaternionf currentQuat = new Quaternionf().rotationXYZ(
                         selObj.rotation.x, selObj.rotation.y, selObj.rotation.z);
                 Quaternionf deltaQuat = new Quaternionf();
@@ -254,15 +258,17 @@ public class EditorGizmoSystem implements EngineSystem {
         int hitAxis = 0;
         float closestDist = Float.MAX_VALUE;
 
+        float pickEps = EngineConfig.Gizmo.PICK_EPSILON;
+
         // ==========================================
         // 1. 회전 모드 (gizmoMode == 2) : 링(원) 형태 피킹
         // ==========================================
         if (editor.gizmoMode == 2) {
-            float radius = 2.0f;
-            float thickness = 0.3f;
+            float radius = EngineConfig.Gizmo.RING_RADIUS;
+            float thickness = EngineConfig.Gizmo.RING_THICKNESS;
 
             // --- X축 링 (YZ 평면) ---
-            if (Math.abs(pickingRay.direction.x) > 1e-6f) {
+            if (Math.abs(pickingRay.direction.x) > pickEps) {
                 float t = (objPos.x - pickingRay.origin.x) / pickingRay.direction.x;
                 if (t > 0) {
                     Vector3f hit = new Vector3f(pickingRay.origin)
@@ -280,7 +286,7 @@ public class EditorGizmoSystem implements EngineSystem {
             }
 
             // --- Y축 링 (XZ 평면) ---
-            if (Math.abs(pickingRay.direction.y) > 1e-6f) {
+            if (Math.abs(pickingRay.direction.y) > pickEps) {
                 float t = (objPos.y - pickingRay.origin.y) / pickingRay.direction.y;
                 if (t > 0) {
                     Vector3f hit = new Vector3f(pickingRay.origin)
@@ -298,7 +304,7 @@ public class EditorGizmoSystem implements EngineSystem {
             }
 
             // --- Z축 링 (XY 평면) ---
-            if (Math.abs(pickingRay.direction.z) > 1e-6f) {
+            if (Math.abs(pickingRay.direction.z) > pickEps) {
                 float t = (objPos.z - pickingRay.origin.z) / pickingRay.direction.z;
                 if (t > 0) {
                     Vector3f hit = new Vector3f(pickingRay.origin)
@@ -319,9 +325,8 @@ public class EditorGizmoSystem implements EngineSystem {
         // 2. 위치 및 크기 모드 (gizmoMode == 0, 1) : 박스 피킹
         // ==========================================
         else {
-            float length = 2.0f;
-            float thickness = 0.3f;
-
+            float length = EngineConfig.Gizmo.AXIS_LENGTH;
+            float thickness = EngineConfig.Gizmo.AXIS_THICKNESS;
             // X축 박스 (X방향으로 뻗은 얇은 상자)
             float xMinX = objPos.x, xMaxX = objPos.x + length;
             float xMinY = objPos.y - thickness, xMaxY = objPos.y + thickness;
