@@ -1,18 +1,13 @@
 import org.joml.Vector3f;
 
-public class EngineGameSystem implements EngineSystem {
+public class EngineGameSystem {
     private final Engine3DLWJGL engine;
 
     public EngineGameSystem(Engine3DLWJGL engine) {
         this.engine = engine;
     }
 
-    @Override
-    public void init() {
-        initWorld();
-    }
-
-    private void initWorld() {
+    public void initWorld() {
         engine.state.playerObject = new PlayerObject(new Vector3f(0.0f, 0.5f, 0.0f), new Vector3f(1.0f, 1.0f, 1.0f));
         engine.state.objects.add(engine.state.playerObject);
 
@@ -24,9 +19,7 @@ public class EngineGameSystem implements EngineSystem {
                 engine.state.playerObject.pos.z);
     }
 
-    @Override
-    public void update(float dt) {
-        // TODO(⑤): dt 기반 프레임레이트 독립화 — 현재는 고정 상수 사용 중
+    public void update() {
         if (engine.state.isEditorMode.get()) {
             updateEditorMode();
         } else {
@@ -160,12 +153,13 @@ public class EngineGameSystem implements EngineSystem {
             engine.state.moveDir.z += Math.sin(engine.state.camYaw);
         }
 
+        // 수평 이동
         if (engine.state.moveDir.lengthSquared() > 0) {
             engine.state.moveDir.normalize().mul(speed);
             engine.state.playerObject.pos.x += engine.state.moveDir.x;
-            engine.collisionSystem.resolveHorizontalCollision(true, engine.state.moveDir.x);
+            engine.collisionSystem.resolveHorizontalCollision(true, engine.state.moveDir.x);   // ← 수정
             engine.state.playerObject.pos.z += engine.state.moveDir.z;
-            engine.collisionSystem.resolveHorizontalCollision(false, engine.state.moveDir.z);
+            engine.collisionSystem.resolveHorizontalCollision(false, engine.state.moveDir.z);  // ← 수정
             engine.state.playerObject.rotation.y = (float) Math.atan2(engine.state.moveDir.x, -engine.state.moveDir.z);
         }
 
@@ -183,9 +177,10 @@ public class EngineGameSystem implements EngineSystem {
             engine.state.isGrounded = true;
         }
 
+        // 수직 충돌
         for (int i = 1; i < engine.state.objects.size(); i++) {
             LevelObject obj = engine.state.objects.get(i);
-            if (obj instanceof BlockObject && engine.collisionSystem
+            if (obj instanceof BlockObject && new EngineCollisionSystem(engine)
                     .checkAABBOverlap(engine.state.playerObject, (BlockObject) obj)) {
                 BlockObject b = (BlockObject) obj;
                 if (engine.state.velocityY < 0) {

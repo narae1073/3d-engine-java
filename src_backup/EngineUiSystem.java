@@ -3,15 +3,14 @@ import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import org.joml.Vector3f;
 
-public class EngineUiSystem implements EngineSystem {
+public class EngineUiSystem {
     private final Engine3DLWJGL engine;
 
     public EngineUiSystem(Engine3DLWJGL engine) {
         this.engine = engine;
     }
 
-    @Override
-    public void render() {
+    public void renderImGui() {
         engine.state.imGuiGlfw.newFrame();
         ImGui.newFrame();
 

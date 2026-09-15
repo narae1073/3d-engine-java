@@ -4,7 +4,7 @@ import org.joml.Vector4f;
 
 import static org.lwjgl.glfw.GLFW.*;
 
-public class EditorGizmoSystem implements EngineSystem {
+public class EditorGizmoSystem {
     private final Engine3DLWJGL engine;
 
     // 드래그 중인 축 (0: 없음, 1: X축, 2: Y축, 3: Z축)
@@ -30,8 +30,7 @@ public class EditorGizmoSystem implements EngineSystem {
         this.engine = engine;
     }
 
-    @Override
-    public void update(float dt) {
+    public void update() {
         if (!engine.state.isEditorMode.get() || ImGui.getIO().getWantCaptureMouse()) {
             engine.state.prevMousePressed = false;
             engine.state.activeGizmoAxis = 0;

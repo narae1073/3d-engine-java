@@ -15,6 +15,9 @@ public class EngineState {
     public int width = 1920;
     public int height = 1080;
 
+    // depth pass uniform locations (render 루프에서 캐싱, 매 프레임 조회 금지)
+    public int locDepthLightSpace, locDepthModel;
+
     public boolean isLocalGizmo = true;
 
     // [ImGui] binding object
@@ -103,20 +106,18 @@ public class EngineState {
     // shader uniform locations
     public int locModel, locView, locProj, locLightSpaceMatrix;
     public int locLightPos, locLightAmbient, locLightDiffuse, locObjectColor, locUseLighting, locShadowMap;
-    // depth pass uniform locations (render 루프에서 캐싱, 매 프레임 조회 금지)
-    public int locDepthLightSpace, locDepthModel;
 
     // Geometry data
     public final float[][] vertices = {
-        { -0.5f, -0.5f, -0.5f }, { 0.5f, -0.5f, -0.5f }, { 0.5f, 0.5f, -0.5f }, { -0.5f, 0.5f, -0.5f },
-        { -0.5f, -0.5f, 0.5f }, { 0.5f, -0.5f, 0.5f }, { 0.5f, 0.5f, 0.5f }, { -0.5f, 0.5f, 0.5f }
+            { -0.5f, -0.5f, -0.5f }, { 0.5f, -0.5f, -0.5f }, { 0.5f, 0.5f, -0.5f }, { -0.5f, 0.5f, -0.5f },
+            { -0.5f, -0.5f, 0.5f }, { 0.5f, -0.5f, 0.5f }, { 0.5f, 0.5f, 0.5f }, { -0.5f, 0.5f, 0.5f }
     };
     public final int[][] faces = {
-        { 4, 5, 6, 7 }, { 1, 0, 3, 2 }, { 3, 2, 6, 7 },
-        { 4, 0, 1, 5 }, { 5, 1, 2, 6 }, { 0, 4, 7, 3 }
+            { 4, 5, 6, 7 }, { 1, 0, 3, 2 }, { 3, 2, 6, 7 },
+            { 4, 0, 1, 5 }, { 5, 1, 2, 6 }, { 0, 4, 7, 3 }
     };
     public final float[][] normals = {
-        { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
+            { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
     };
 
     public int activeGizmoAxis = 0; // 0: 없음, 1: X축, 2: Y축, 3: Z축

@@ -29,25 +29,11 @@ import static org.lwjgl.opengl.GL20.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20.glUseProgram;
 import static org.lwjgl.opengl.GL30.*;
 
-public class EngineRenderer implements EngineSystem {
+public class EngineRenderer {
     private final Engine3DLWJGL engine;
 
     public EngineRenderer(Engine3DLWJGL engine) {
         this.engine = engine;
-    }
-
-    @Override
-    public void init() {
-        initShadowFBO();
-        initShaders();
-    }
-
-    @Override
-    public void dispose() {
-        glDeleteFramebuffers(engine.state.depthFBO);
-        glDeleteTextures(engine.state.depthMap);
-        glDeleteProgram(engine.state.mainShaderProgram);
-        glDeleteProgram(engine.state.depthShaderProgram);
     }
 
     public void initShadowFBO() {
@@ -83,7 +69,7 @@ public class EngineRenderer implements EngineSystem {
                 "}\n";
 
         engine.state.depthShaderProgram = createProgram(depthVS, depthFS);
-        // 유니폼 로케이션 초기화 시점에 한 번만 캐싱 (렌더 루프에서 매 프레임 조회 방지)
+        // 유니폼 로케이션 초기화 시점에 한 번만 캐싱
         engine.state.locDepthLightSpace = glGetUniformLocation(engine.state.depthShaderProgram, "lightSpaceMatrix");
         engine.state.locDepthModel = glGetUniformLocation(engine.state.depthShaderProgram, "model");
 
@@ -555,4 +541,10 @@ public class EngineRenderer implements EngineSystem {
         glEnd();
     }
 
+    public void cleanup() {
+        glDeleteFramebuffers(engine.state.depthFBO);
+        glDeleteTextures(engine.state.depthMap);
+        glDeleteProgram(engine.state.mainShaderProgram);
+        glDeleteProgram(engine.state.depthShaderProgram);
+    }
 }

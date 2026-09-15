@@ -1,16 +1,11 @@
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
-public class EngineInputSystem implements EngineSystem {
+public class EngineInputSystem {
     private final Engine3DLWJGL engine;
 
     public EngineInputSystem(Engine3DLWJGL engine) {
         this.engine = engine;
-    }
-
-    @Override
-    public void init() {
-        configureCallbacks();
     }
 
     public void configureCallbacks() {
