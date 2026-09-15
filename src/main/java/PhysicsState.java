@@ -1,7 +1,5 @@
 public class PhysicsState {
     public float velocityY    = EngineConfig.Physics.VELOCITY_Y;
-    public float gravity      = EngineConfig.Physics.GRAVITY;
-    public float jumpStrength = EngineConfig.Physics.JUMP_STRENGTH;
     public boolean isGrounded = false;
     public boolean wasGrounded = true;
 

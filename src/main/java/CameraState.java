@@ -10,7 +10,6 @@ public class CameraState {
             EngineConfig.Camera.SMOOTH_POS_Z);
     public float camYaw      = EngineConfig.Camera.CAM_YAW;
     public float camPitch    = EngineConfig.Camera.CAM_PITCH;
-    public float camDistance = EngineConfig.Camera.CAM_DISTANCE;
     public final ImBoolean isOrthographic = new ImBoolean(false);
     public float orthoTransition = 0.0f;
 
@@ -20,8 +19,6 @@ public class CameraState {
     public float editorCamYaw   = 0.0f;
     public float editorCamPitch = 0.0f;
     public boolean hasInitializedEditorCam = false;
-    public float editorSpeed           = EngineConfig.Camera.EDITOR_SPEED;
-    public float editorSpeedMultiplier = EngineConfig.Camera.EDITOR_SPEED_MULTIPLIER;
 
     public final Matrix4f editorInvVPMatrix = new Matrix4f();
 }

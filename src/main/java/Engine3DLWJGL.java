@@ -15,7 +15,6 @@ public class Engine3DLWJGL {
     private final WindowContext win = state.window;
     private final InputState input = state.input;
     private final CameraState camera = state.camera;
-    private final LightState light = state.light;
     private final PhysicsState physics = state.physics;
     private final EditorState editor = state.editor;
     private final WorldState world = state.world;
@@ -29,8 +28,8 @@ public class Engine3DLWJGL {
         // 의존성 명시적 주입 — 각 시스템이 필요한 컴포넌트만 받음
         systems.add(new EngineInputSystem(win, input));
         systems.add(new EngineGameSystem(win, input, camera, physics, world, collisionSystem));
-        systems.add(new EngineRenderer(win, camera, light, physics, editor, world));
-        systems.add(new EngineUiSystem(state, camera, light, physics, editor, world));
+        systems.add(new EngineRenderer(win, camera, physics, editor, world));
+        systems.add(new EngineUiSystem(state, camera, physics, editor, world));
         systems.add(new EditorGizmoSystem(win, camera, editor, world));
     }
 
@@ -100,6 +99,7 @@ public class Engine3DLWJGL {
     }
 
     public static void main(String[] args) {
+        EngineConfig.load(); // ← 최상단 1회
         new Engine3DLWJGL().run();
     }
 }

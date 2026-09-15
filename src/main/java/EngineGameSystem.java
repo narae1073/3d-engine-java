@@ -94,7 +94,8 @@ public class EngineGameSystem implements EngineSystem {
         boolean isCtrlPressed = (glfwGetKey(win.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
                 (glfwGetKey(win.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
-        float currentSpeed = camera.editorSpeed * (isCtrlPressed ? camera.editorSpeedMultiplier : 1.0f);
+        float currentSpeed = EngineConfig.Camera.EDITOR_SPEED
+                * (isCtrlPressed ? EngineConfig.Camera.EDITOR_SPEED_MULTIPLIER : 1.0f);
         Vector3f editorMoveDir = new Vector3f();
 
         if (isFlyActive) {
@@ -185,7 +186,7 @@ public class EngineGameSystem implements EngineSystem {
         physics.scaleY += (1.0f - physics.scaleY) * EngineConfig.Game.SCALE_LERP;
         physics.scaleZ += (1.0f - physics.scaleZ) * EngineConfig.Game.SCALE_LERP;
 
-        physics.velocityY += physics.gravity;
+        physics.velocityY += EngineConfig.Physics.GRAVITY;
         world.playerObject.pos.y += physics.velocityY;
         physics.isGrounded = false;
 
@@ -212,7 +213,7 @@ public class EngineGameSystem implements EngineSystem {
         }
 
         if (input.space && physics.isGrounded) {
-            physics.velocityY = physics.jumpStrength;
+            physics.velocityY = EngineConfig.Physics.JUMP_STRENGTH;
             physics.isGrounded = false;
             physics.scaleY = EngineConfig.Game.JUMP_SCALE_Y;
             physics.scaleX = EngineConfig.Game.JUMP_SCALE_XZ;

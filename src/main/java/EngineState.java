@@ -15,7 +15,6 @@ public class EngineState {
     public final WindowContext window = new WindowContext();
     public final InputState input = new InputState();
     public final CameraState camera = new CameraState();
-    public final LightState light = new LightState();
     public final PhysicsState physics = new PhysicsState();
     public final EditorState editor = new EditorState();
     public final WorldState world = new WorldState();

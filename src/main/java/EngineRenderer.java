@@ -31,7 +31,6 @@ public class EngineRenderer implements EngineSystem {
     // ============================================================
     private final WindowContext win;
     private final CameraState camera;
-    private final LightState light;
     private final PhysicsState physics;
     private final EditorState editor;
     private final WorldState world;
@@ -80,11 +79,10 @@ public class EngineRenderer implements EngineSystem {
             { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
     };
 
-    public EngineRenderer(WindowContext win, CameraState camera, LightState light,
+    public EngineRenderer(WindowContext win, CameraState camera,
             PhysicsState physics, EditorState editor, WorldState world) {
         this.win = win;
         this.camera = camera;
-        this.light = light;
         this.physics = physics;
         this.editor = editor;
         this.world = world;
@@ -180,7 +178,8 @@ public class EngineRenderer implements EngineSystem {
                 "    if(projCoords.z > 1.0) return 0.0;\n" +
                 "    float bias = max(0.001 * (1.0 - dot(normal, lightDir)), 0.0005);\n" +
                 "    float shadow = 0.0;\n" +
-                "    vec2 texelSize = vec2(1.0 / 2048.0);\n" +
+                // ↓ shadow width를 프로퍼티에서 주입
+                "    vec2 texelSize = vec2(1.0 / " + EngineConfig.Render.SHADOW_WIDTH + ".0);\n" +
                 "    for(int x = -1; x <= 1; ++x) {\n" +
                 "        for(int y = -1; y <= 1; ++y) {\n" +
                 "            float pcfDepth = texture2D(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;\n" +
@@ -251,9 +250,9 @@ public class EngineRenderer implements EngineSystem {
 
         Vector3f lightTarget = new Vector3f(world.playerObject.pos.x, 0.0f, world.playerObject.pos.z);
         Vector3f actualLightPos = new Vector3f(
-                world.playerObject.pos.x + light.lightPos.x,
-                light.lightPos.y,
-                world.playerObject.pos.z + light.lightPos.z);
+                world.playerObject.pos.x + EngineConfig.Light.POS_X,
+                EngineConfig.Light.POS_Y,
+                world.playerObject.pos.z + EngineConfig.Light.POS_Z);
         lightViewMatrix.identity().lookAt(actualLightPos, lightTarget, new Vector3f(0.0f, 1.0f, 0.0f));
         lightProjMatrix.mul(lightViewMatrix, lightSpaceMatrix);
 
@@ -288,10 +287,8 @@ public class EngineRenderer implements EngineSystem {
 
         // ---------- 4. 메인 패스 ----------
         glViewport(0, 0, win.width, win.height);
-        glClearColor(EngineConfig.Render.CLEAR_R,
-                EngineConfig.Render.CLEAR_G,
-                EngineConfig.Render.CLEAR_B,
-                EngineConfig.Render.CLEAR_A);
+        float[] clear = EngineConfig.Render.clearRGBA();
+        glClearColor(clear[0], clear[1], clear[2], clear[3]);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(mainShaderProgram);
@@ -321,7 +318,7 @@ public class EngineRenderer implements EngineSystem {
             viewMatrix.identity().lookAt(eye, center, new Vector3f(0, 1, 0));
         } else {
             viewMatrix.identity()
-                    .translate(0, 0, -camera.camDistance)
+                    .translate(0, 0, -EngineConfig.Camera.CAM_DISTANCE) // ★
                     .rotateX(camera.camPitch)
                     .rotateY(camera.camYaw)
                     .translate(-camera.smoothCamPos.x, -camera.smoothCamPos.y, -camera.smoothCamPos.z);
@@ -331,9 +328,11 @@ public class EngineRenderer implements EngineSystem {
         glUniformMatrix4fv(locView, false, viewMatrix.get(matrixBuffer));
         glUniformMatrix4fv(locLightSpaceMatrix, false, lightSpaceMatrix.get(matrixBuffer));
 
-        glUniform3f(locLightPos, light.lightPos.x, light.lightPos.y, light.lightPos.z);
-        glUniform1f(locLightAmbient, light.lightAmbient);
-        glUniform1f(locLightDiffuse, light.lightDiffuse);
+        // uniform 설정
+        glUniform3f(locLightPos, EngineConfig.Light.POS_X,
+                EngineConfig.Light.POS_Y, EngineConfig.Light.POS_Z);
+        glUniform1f(locLightAmbient, EngineConfig.Light.AMBIENT);
+        glUniform1f(locLightDiffuse, EngineConfig.Light.DIFFUSE);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -386,15 +385,16 @@ public class EngineRenderer implements EngineSystem {
                         obj.size.y * physics.scaleY,
                         obj.size.z * physics.scaleZ);
                 if (isMainPass) {
-                    if (physics.isGrounded)
-                        glUniform3f(locObjectColor, 0.2f, 0.9f, 1.0f);
-                    else
-                        glUniform3f(locObjectColor, 0.1f, 0.6f, 1.0f);
+                    float[] c = physics.isGrounded
+                            ? EngineConfig.Render.COLOR_PLAYER_GROUND
+                            : EngineConfig.Render.COLOR_PLAYER_AIR;
+                    glUniform3f(locObjectColor, c[0], c[1], c[2]);
                 }
             } else if (obj instanceof BlockObject) {
                 modelMatrix.scale(obj.size.x, obj.size.y, obj.size.z);
                 if (isMainPass) {
-                    glUniform3f(locObjectColor, 0.95f, 0.5f, 0.2f);
+                    float[] c = EngineConfig.Render.COLOR_BLOCK;
+                    glUniform3f(locObjectColor, c[0], c[1], c[2]);
                 }
             }
 
@@ -440,10 +440,9 @@ public class EngineRenderer implements EngineSystem {
         }
 
         glUniform1i(locUseLighting, 0);
-        glUniform3f(locObjectColor,
-                EngineConfig.Render.COLOR_HIGHLIGHT[0],
-                EngineConfig.Render.COLOR_HIGHLIGHT[1],
-                EngineConfig.Render.COLOR_HIGHLIGHT[2]);
+        float[] c = EngineConfig.Render.COLOR_HIGHLIGHT;
+        glUniform3f(locObjectColor, c[0], c[1], c[2]);
+
         glUniformMatrix4fv(locModel, false, highlight.get(matrixBuffer));
         if (selObj instanceof PlayerObject) {
             drawSphereGeometry();
@@ -684,4 +683,5 @@ public class EngineRenderer implements EngineSystem {
         }
         glEnd();
     }
+
 }
