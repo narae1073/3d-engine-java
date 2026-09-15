@@ -18,7 +18,7 @@ public class Engine3DLWJGL {
     private final PhysicsState physics = state.physics;
     private final EditorState editor = state.editor;
     private final WorldState world = state.world;
-
+    private final InputMap inputMap = new InputMap();
     private final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(world);
 
     private final List<EngineSystem> systems = new ArrayList<>();
@@ -26,11 +26,11 @@ public class Engine3DLWJGL {
 
     public Engine3DLWJGL() {
         // 의존성 명시적 주입 — 각 시스템이 필요한 컴포넌트만 받음
-        systems.add(new EngineInputSystem(win, input));
+        systems.add(new EngineInputSystem(win, input, inputMap)); // ★
         systems.add(new EngineGameSystem(win, input, camera, physics, world, collisionSystem));
         systems.add(new EngineRenderer(win, camera, physics, editor, world));
         systems.add(new EngineUiSystem(state, camera, physics, editor, world));
-        systems.add(new EditorGizmoSystem(win, camera, editor, world));
+        systems.add(new EditorGizmoSystem(win, input, camera, editor, world));
     }
 
     public void run() {
@@ -76,6 +76,7 @@ public class Engine3DLWJGL {
         while (!glfwWindowShouldClose(win.window)) {
             update();
             render();
+            input.clearMouseDelta(); // ★ 추가
             glfwSwapBuffers(win.window);
             glfwPollEvents();
         }

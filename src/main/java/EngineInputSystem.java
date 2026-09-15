@@ -1,35 +1,25 @@
+import imgui.ImGui;
+
 import static org.lwjgl.glfw.GLFW.*;
 
 public class EngineInputSystem implements EngineSystem {
     private final WindowContext win;
     private final InputState input;
+    private final InputMap inputMap;
 
-    public EngineInputSystem(WindowContext win, InputState input) {
+    public EngineInputSystem(WindowContext win, InputState input, InputMap inputMap) {
         this.win = win;
         this.input = input;
+        this.inputMap = inputMap;
     }
 
     @Override
     public void init() {
-        glfwSetKeyCallback(win.window, (w, key, sc, action, mods) -> {
-            boolean isPressed = (action != GLFW_RELEASE);
-            if (key == GLFW_KEY_W) input.w = isPressed;
-            if (key == GLFW_KEY_A) input.a = isPressed;
-            if (key == GLFW_KEY_S) input.s = isPressed;
-            if (key == GLFW_KEY_D) input.d = isPressed;
-            if (key == GLFW_KEY_SPACE) input.space = isPressed;
-
-            if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
-                input.isUiMode = !input.isUiMode;
-                glfwSetInputMode(win.window, GLFW_CURSOR,
-                        input.isUiMode ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
-                input.lastMouseX = -1;
-                input.lastMouseY = -1;
-            }
-        });
-
-        glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        // 마우스 커서 위치 콜백 (델타 + 절대 좌표)
         glfwSetCursorPosCallback(win.window, (w, xpos, ypos) -> {
+            input.mouseX = xpos;
+            input.mouseY = ypos;
+
             if (input.lastMouseX == -1) {
                 input.lastMouseX = xpos;
                 input.lastMouseY = ypos;
@@ -41,5 +31,27 @@ public class EngineInputSystem implements EngineSystem {
             input.lastMouseX = xpos;
             input.lastMouseY = ypos;
         });
+
+        // 스크롤 콜백
+        glfwSetScrollCallback(win.window, (w, xoff, yoff) -> {
+            input.scrollDelta += yoff;
+        });
+
+        glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    }
+
+    @Override
+    public void update(float dt) {
+        // 매 프레임 키/버튼 상태 폴링
+        input.poll(win.window, inputMap);
+
+        // TAB: UI 모드 토글 (poll 후 pressed 판정)
+        if (input.isPressed(Action.TOGGLE_UI_MODE)) {
+            input.isUiMode = !input.isUiMode;
+            glfwSetInputMode(win.window, GLFW_CURSOR,
+                    input.isUiMode ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+            input.lastMouseX = -1;
+            input.lastMouseY = -1;
+        }
     }
 }

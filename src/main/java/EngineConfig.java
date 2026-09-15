@@ -575,9 +575,13 @@ public final class EngineConfig {
         public static float DT_CLAMP = 0.05f;
         public static String GLSL_VERSION = "#version 120";
 
+        /** 프레임 독립 계산의 기준이 되는 초당 프레임. */
+        public static float REFERENCE_FPS = 60.0f;
+
         static void apply() {
             DT_CLAMP = getFloat("engine.dtClamp", DT_CLAMP);
             GLSL_VERSION = getString("engine.glslVersion", GLSL_VERSION);
+            REFERENCE_FPS = getFloat("engine.referenceFps", REFERENCE_FPS);
         }
     }
 

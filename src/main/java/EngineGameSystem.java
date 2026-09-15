@@ -50,17 +50,22 @@ public class EngineGameSystem implements EngineSystem {
     @Override
     public void update(float dt) {
         if (camera.isEditorMode.get()) {
-            updateEditorMode();
+            updateEditorMode(dt);
         } else {
-            updatePlayMode();
+            updatePlayMode(dt);
         }
 
+        // ★ ortho transition lerp: 프레임 독립
+        float ref = EngineConfig.Engine.REFERENCE_FPS;
+        float frameScale = dt * ref;
+        float lerp = frameIndependentLerp(EngineConfig.Camera.ORTHO_LERP, frameScale);
+
         float targetTransition = camera.isOrthographic.get() ? 1.0f : 0.0f;
-        camera.orthoTransition += (targetTransition - camera.orthoTransition)
-                * EngineConfig.Camera.ORTHO_LERP;
+        camera.orthoTransition += (targetTransition - camera.orthoTransition) * lerp;
     }
 
-    public void updateEditorMode() {
+    public void updateEditorMode(float dt) {
+
         if (!camera.hasInitializedEditorCam) {
             camera.editorCamPos.set(
                     world.playerObject.pos.x + EngineConfig.Editor.INIT_OFFSET_X,
@@ -71,11 +76,8 @@ public class EngineGameSystem implements EngineSystem {
             camera.hasInitializedEditorCam = true;
         }
 
-        boolean isAltPressed = (glfwGetKey(win.window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) ||
-                (glfwGetKey(win.window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
-
-        boolean isFlyActive = (glfwGetMouseButton(win.window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) ||
-                (glfwGetMouseButton(win.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS && !isAltPressed);
+        boolean isFlyActive = input.isDown(Action.MOUSE_MIDDLE)
+                || (input.isDown(Action.MOUSE_RIGHT) && !input.isDown(Action.ORBIT_MODIFIER));
 
         if (isFlyActive) {
             float sensitivity = EngineConfig.Camera.EDITOR_LOOK_SENSITIVITY;
@@ -91,37 +93,37 @@ public class EngineGameSystem implements EngineSystem {
         float rightX = (float) Math.cos(camera.editorCamYaw);
         float rightZ = (float) Math.sin(camera.editorCamYaw);
 
-        boolean isCtrlPressed = (glfwGetKey(win.window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
-                (glfwGetKey(win.window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
-
+        float frameScale = dt * EngineConfig.Engine.REFERENCE_FPS;
+        boolean isCtrl = input.isDown(Action.FLY_FAST);
         float currentSpeed = EngineConfig.Camera.EDITOR_SPEED
-                * (isCtrlPressed ? EngineConfig.Camera.EDITOR_SPEED_MULTIPLIER : 1.0f);
+                * (isCtrl ? EngineConfig.Camera.EDITOR_SPEED_MULTIPLIER : 1.0f)
+                * frameScale;
+
         Vector3f editorMoveDir = new Vector3f();
 
         if (isFlyActive) {
-            if (input.w)
+            if (input.isDown(Action.MOVE_FORWARD))
                 editorMoveDir.add(forwardX, forwardY, forwardZ);
-            if (input.s)
+            if (input.isDown(Action.MOVE_BACKWARD))
                 editorMoveDir.sub(forwardX, forwardY, forwardZ);
-            if (input.a)
+            if (input.isDown(Action.MOVE_LEFT))
                 editorMoveDir.sub(rightX, 0, rightZ);
-
-            if (input.d)
+            if (input.isDown(Action.MOVE_RIGHT))
                 editorMoveDir.add(rightX, 0, rightZ);
         } else {
             float flatForwardX = (float) Math.sin(camera.editorCamYaw);
             float flatForwardZ = (float) -Math.cos(camera.editorCamYaw);
-            if (input.w)
+            if (input.isDown(Action.MOVE_FORWARD))
                 editorMoveDir.add(flatForwardX, 0, flatForwardZ);
-            if (input.s)
+            if (input.isDown(Action.MOVE_BACKWARD))
                 editorMoveDir.sub(flatForwardX, 0, flatForwardZ);
-            if (input.a)
+            if (input.isDown(Action.MOVE_LEFT))
                 editorMoveDir.sub(rightX, 0, rightZ);
-            if (input.d)
+            if (input.isDown(Action.MOVE_RIGHT))
                 editorMoveDir.add(rightX, 0, rightZ);
-            if (glfwGetKey(win.window, GLFW_KEY_E) == GLFW_PRESS)
+            if (input.isDown(Action.FLY_UP))
                 camera.editorCamPos.y += currentSpeed;
-            if (glfwGetKey(win.window, GLFW_KEY_Q) == GLFW_PRESS)
+            if (input.isDown(Action.FLY_DOWN))
                 camera.editorCamPos.y -= currentSpeed;
         }
 
@@ -130,7 +132,7 @@ public class EngineGameSystem implements EngineSystem {
             camera.editorCamPos.add(editorMoveDir);
         }
 
-        float wheel = imgui.ImGui.getIO().getMouseWheel();
+        float wheel = (float) input.scrollDelta; // ★ GLFW 콜백 값
         if (wheel != 0) {
             float zoomSpeed = EngineConfig.Camera.EDITOR_ZOOM_SPEED;
             camera.editorCamPos.add(forwardX * wheel * zoomSpeed,
@@ -143,38 +145,39 @@ public class EngineGameSystem implements EngineSystem {
         camera.camPitch = camera.editorCamPitch;
     }
 
-    public void updatePlayMode() {
+    public void updatePlayMode(float dt) {
+        float frameScale = dt * EngineConfig.Engine.REFERENCE_FPS;
+
         float sensitivity = EngineConfig.Camera.PLAY_LOOK_SENSITIVITY;
         camera.camYaw += (float) input.mouseDeltaX * sensitivity;
         camera.camPitch += (float) input.mouseDeltaY * sensitivity;
         camera.camPitch = Math.max((float) Math.toRadians(EngineConfig.Camera.PLAY_PITCH_MIN_DEG),
                 Math.min((float) Math.toRadians(EngineConfig.Camera.PLAY_PITCH_MAX_DEG),
                         camera.camPitch));
-        input.clearMouseDelta();
 
         float speed = EngineConfig.Game.MOVE_SPEED;
 
         world.moveDir.set(0, 0, 0);
 
-        if (input.w) {
+        if (input.isDown(Action.MOVE_FORWARD)) {
             world.moveDir.x += Math.sin(camera.camYaw);
             world.moveDir.z -= Math.cos(camera.camYaw);
         }
-        if (input.s) {
+        if (input.isDown(Action.MOVE_BACKWARD)) {
             world.moveDir.x -= Math.sin(camera.camYaw);
             world.moveDir.z += Math.cos(camera.camYaw);
         }
-        if (input.a) {
+        if (input.isDown(Action.MOVE_LEFT)) {
             world.moveDir.x -= Math.cos(camera.camYaw);
             world.moveDir.z -= Math.sin(camera.camYaw);
         }
-        if (input.d) {
+        if (input.isDown(Action.MOVE_RIGHT)) {
             world.moveDir.x += Math.cos(camera.camYaw);
             world.moveDir.z += Math.sin(camera.camYaw);
         }
 
         if (world.moveDir.lengthSquared() > 0) {
-            world.moveDir.normalize().mul(speed);
+            world.moveDir.normalize().mul(speed * frameScale);
             world.playerObject.pos.x += world.moveDir.x;
             collisionSystem.resolveHorizontalCollision(true, world.moveDir.x);
             world.playerObject.pos.z += world.moveDir.z;
@@ -182,11 +185,13 @@ public class EngineGameSystem implements EngineSystem {
             world.playerObject.rotation.y = (float) Math.atan2(world.moveDir.x, -world.moveDir.z);
         }
 
+        // ★ 스케일 lerp: 프레임 독립
+        float scaleLerp = frameIndependentLerp(EngineConfig.Game.SCALE_LERP, frameScale);
         physics.scaleX += (1.0f - physics.scaleX) * EngineConfig.Game.SCALE_LERP;
         physics.scaleY += (1.0f - physics.scaleY) * EngineConfig.Game.SCALE_LERP;
         physics.scaleZ += (1.0f - physics.scaleZ) * EngineConfig.Game.SCALE_LERP;
 
-        physics.velocityY += EngineConfig.Physics.GRAVITY;
+        physics.velocityY += EngineConfig.Physics.GRAVITY * frameScale;
         world.playerObject.pos.y += physics.velocityY;
         physics.isGrounded = false;
 
@@ -212,7 +217,7 @@ public class EngineGameSystem implements EngineSystem {
             }
         }
 
-        if (input.space && physics.isGrounded) {
+        if (input.isDown(Action.JUMP) && physics.isGrounded) {
             physics.velocityY = EngineConfig.Physics.JUMP_STRENGTH;
             physics.isGrounded = false;
             physics.scaleY = EngineConfig.Game.JUMP_SCALE_Y;
@@ -231,6 +236,30 @@ public class EngineGameSystem implements EngineSystem {
                 world.playerObject.pos.x,
                 world.playerObject.pos.y + EngineConfig.Camera.TARGET_Y_OFFSET,
                 world.playerObject.pos.z);
-        camera.smoothCamPos.lerp(world.targetCam, EngineConfig.Camera.SMOOTH_LERP);
+        float camLerp = frameIndependentLerp(EngineConfig.Camera.SMOOTH_LERP, frameScale);
+        camera.smoothCamPos.lerp(world.targetCam, camLerp);
+    }
+
+    /**
+     * 프레임 독립 lerp 계수.
+     *
+     * <p>
+     * 원래 {@code k}가 "60Hz 1프레임 기준" 계수일 때,
+     * 임의의 dt에서 동일한 감쇠율을 얻기 위한 계수를 반환한다.
+     *
+     * <p>
+     * 수식: {@code 1 - (1 - k)^(dt * refFps)}
+     *
+     * <p>
+     * 검증: dt = 1/60, ref = 60 → frameScale = 1 → 결과 = k (기존과 동일)
+     * dt = 1/144, ref = 60 → frameScale = 0.4167 → 결과 ≈ 0.4167 * k (근사)
+     */
+    private static float frameIndependentLerp(float k, float frameScale) {
+        // k가 1에 가까우면 pow가 무의미하므로 그대로 반환
+        if (k >= 1.0f)
+            return 1.0f;
+        if (k <= 0.0f)
+            return 0.0f;
+        return 1.0f - (float) Math.pow(1.0f - k, frameScale);
     }
 }

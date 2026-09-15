@@ -8,6 +8,7 @@ import static org.lwjgl.glfw.GLFW.*;
 
 public class EditorGizmoSystem implements EngineSystem {
     private final WindowContext win;
+    private final InputState input;
     private final CameraState camera;
     private final EditorState editor;
     private final WorldState world;
@@ -18,11 +19,11 @@ public class EditorGizmoSystem implements EngineSystem {
     private double lastMouseY = 0;
     private float orbitDistance = 5.0f;
     private boolean prevRightMousePressed = false;
-    private boolean fKeyPressed = false;
-    private boolean lKeyPressed = false;
 
-    public EditorGizmoSystem(WindowContext win, CameraState camera, EditorState editor, WorldState world) {
+    public EditorGizmoSystem(WindowContext win, InputState input, CameraState camera, EditorState editor,
+            WorldState world) {
         this.win = win;
+        this.input = input;
         this.camera = camera;
         this.editor = editor;
         this.world = world;
@@ -36,81 +37,65 @@ public class EditorGizmoSystem implements EngineSystem {
             return;
         }
 
-        // 숫자키 1, 2, 3으로 기즈모 모드 변경
-        if (glfwGetKey(win.window, GLFW_KEY_1) == GLFW_PRESS)
+        // 기즈모 모드 전환
+        if (input.isDown(Action.GIZMO_POSITION))
             editor.gizmoMode = 0;
-        else if (glfwGetKey(win.window, GLFW_KEY_2) == GLFW_PRESS)
+        else if (input.isDown(Action.GIZMO_SCALE))
             editor.gizmoMode = 1;
-        else if (glfwGetKey(win.window, GLFW_KEY_3) == GLFW_PRESS)
+        else if (input.isDown(Action.GIZMO_ROTATION))
             editor.gizmoMode = 2;
 
-        // F키 포커스
-        if (glfwGetKey(win.window, GLFW_KEY_F) == GLFW_PRESS) {
-            if (!fKeyPressed) {
-                fKeyPressed = true;
-                if (editor.selectedObjectIndex >= 0 && editor.selectedObjectIndex < world.objects.size()) {
-                    LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
-                    float focusDistance = Math.max(
-                            EngineConfig.Editor.FOCUS_MIN_DISTANCE,
-                            selObj.size.length() * EngineConfig.Editor.FOCUS_SIZE_FACTOR);
-                    float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
-                    float fy = (float) -Math.sin(camera.editorCamPitch);
-                    float fz = (float) (-Math.cos(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
-                    camera.editorCamPos.set(
-                            selObj.pos.x - fx * focusDistance,
-                            selObj.pos.y - fy * focusDistance,
-                            selObj.pos.z - fz * focusDistance);
-                }
-            }
-        } else {
-            fKeyPressed = false;
-        }
-
-        // L키 Local/Global 토글
-        if (glfwGetKey(win.window, GLFW_KEY_L) == GLFW_PRESS) {
-            if (!lKeyPressed) {
-                editor.isLocalGizmo = !editor.isLocalGizmo;
-                lKeyPressed = true;
-                System.out.println("기즈모 모드: " + (editor.isLocalGizmo ? "Local" : "Global"));
-            }
-        } else {
-            lKeyPressed = false;
-        }
-
-        // Alt + 우클릭 오빗
-        boolean isOrbitAltPressed = (glfwGetKey(win.window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) ||
-                (glfwGetKey(win.window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS);
-        boolean isRightMousePressed = isOrbitAltPressed &&
-                (glfwGetMouseButton(win.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
-
-        if (isRightMousePressed) {
+        // F키 포커스 (pressed)
+        if (input.isPressed(Action.GIZMO_FOCUS)) {
             if (editor.selectedObjectIndex >= 0 && editor.selectedObjectIndex < world.objects.size()) {
                 LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
-                double[] mouseX = new double[1], mouseY = new double[1];
-                glfwGetCursorPos(win.window, mouseX, mouseY);
+                float focusDistance = Math.max(
+                        EngineConfig.Editor.FOCUS_MIN_DISTANCE,
+                        selObj.size.length() * EngineConfig.Editor.FOCUS_SIZE_FACTOR);
+                float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
+                float fy = (float) -Math.sin(camera.editorCamPitch);
+                float fz = (float) (-Math.cos(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
+                camera.editorCamPos.set(
+                        selObj.pos.x - fx * focusDistance,
+                        selObj.pos.y - fy * focusDistance,
+                        selObj.pos.z - fz * focusDistance);
+            }
+        }
+        // (fKeyPressed 플래그는 이제 불필요 — isPressed가 대체)
+
+        // L키 Local/Global 토글 (pressed)
+        if (input.isPressed(Action.GIZMO_TOGGLE_LOCAL)) {
+            editor.isLocalGizmo = !editor.isLocalGizmo;
+            System.out.println("기즈모 모드: " + (editor.isLocalGizmo ? "Local" : "Global"));
+        }
+        // (lKeyPressed 플래그도 불필요)
+
+        // Alt + 우클릭 오빗
+        boolean isOrbitAlt = input.isDown(Action.ORBIT_MODIFIER);
+        boolean isRightMouse = input.isDown(Action.MOUSE_RIGHT);
+
+        if (isRightMouse && isOrbitAlt) {
+            if (editor.selectedObjectIndex >= 0 && editor.selectedObjectIndex < world.objects.size()) {
+                LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
+
+                double mouseX = input.mouseX;
+                double mouseY = input.mouseY;
 
                 if (!prevRightMousePressed) {
-                    lastMouseX = mouseX[0];
-                    lastMouseY = mouseY[0];
+                    lastMouseX = mouseX;
+                    lastMouseY = mouseY;
                     orbitDistance = new Vector3f(camera.editorCamPos).sub(selObj.pos).length();
                     if (orbitDistance < 1.0f)
                         orbitDistance = 5.0f;
                 }
 
-                float deltaX = (float) (mouseX[0] - lastMouseX);
-                float deltaY = (float) (mouseY[0] - lastMouseY);
+                float deltaX = (float) (mouseX - lastMouseX);
+                float deltaY = (float) (mouseY - lastMouseY);
                 float rotSpeed = EngineConfig.Editor.ORBIT_ROT_SPEED;
                 camera.editorCamYaw += deltaX * rotSpeed;
                 camera.editorCamPitch -= deltaY * rotSpeed;
                 float limit = EngineConfig.Editor.ORBIT_PITCH_LIMIT;
                 camera.editorCamPitch = Math.max(-limit, Math.min(limit, camera.editorCamPitch));
-
-                float wheel = ImGui.getIO().getMouseWheel();
-                if (wheel != 0) {
-                    orbitDistance -= wheel * (orbitDistance * EngineConfig.Editor.ORBIT_ZOOM_FACTOR);
-                    orbitDistance = Math.max(EngineConfig.Editor.ORBIT_DIST_MIN,
-                            Math.min(EngineConfig.Editor.ORBIT_DIST_MAX, orbitDistance));
-                }
 
                 float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
                 float fy = (float) -Math.sin(camera.editorCamPitch);
@@ -121,8 +106,8 @@ public class EditorGizmoSystem implements EngineSystem {
                         selObj.pos.y - fy * orbitDistance,
                         selObj.pos.z - fz * orbitDistance);
 
-                lastMouseX = mouseX[0];
-                lastMouseY = mouseY[0];
+                lastMouseX = mouseX;
+                lastMouseY = mouseY;
                 prevRightMousePressed = true;
                 return;
             }
@@ -130,24 +115,20 @@ public class EditorGizmoSystem implements EngineSystem {
             prevRightMousePressed = false;
         }
 
-        boolean currentPressed = (glfwGetMouseButton(win.window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+        // 좌클릭 드래그
+        boolean currentPressed = input.isDown(Action.MOUSE_LEFT);
 
         if (currentPressed && !editor.prevMousePressed) {
             checkGizmoClick();
             if (activeAxis == 0) {
                 castRayAndSelectObject();
             } else {
-                double[] mouseX = new double[1], mouseY = new double[1];
-                glfwGetCursorPos(win.window, mouseX, mouseY);
-                lastMouseX = mouseX[0];
-                lastMouseY = mouseY[0];
+                lastMouseX = input.mouseX;
+                lastMouseY = input.mouseY;
             }
         } else if (currentPressed && editor.prevMousePressed && activeAxis != 0) {
-            double[] mouseX = new double[1], mouseY = new double[1];
-            glfwGetCursorPos(win.window, mouseX, mouseY);
-
-            float deltaX = (float) (mouseX[0] - lastMouseX);
-            float deltaY = (float) (mouseY[0] - lastMouseY);
+            float deltaX = (float) (input.mouseX - lastMouseX);
+            float deltaY = (float) (input.mouseY - lastMouseY);
 
             LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
             float sensitivity = EngineConfig.Editor.DRAG_SENSITIVITY;
@@ -184,7 +165,6 @@ public class EditorGizmoSystem implements EngineSystem {
                         .add(new Vector3f(camUp).mul(-deltaY * sensitivity));
                 float moveAmount = screenDelta.dot(axisDir);
                 selObj.pos.add(new Vector3f(axisDir).mul(moveAmount));
-
             } else if (editor.gizmoMode == 1) {
                 float minScale = EngineConfig.Editor.SCALE_MIN;
                 if (activeAxis == 1)
@@ -216,8 +196,8 @@ public class EditorGizmoSystem implements EngineSystem {
                 selObj.rotation.set(newEuler);
             }
 
-            lastMouseX = mouseX[0];
-            lastMouseY = mouseY[0];
+            lastMouseX = input.mouseX;
+            lastMouseY = input.mouseY;
         } else if (!currentPressed) {
             activeAxis = 0;
         }
@@ -372,16 +352,8 @@ public class EditorGizmoSystem implements EngineSystem {
     }
 
     private Ray getMouseRay() {
-        double[] mouseX = new double[1], mouseY = new double[1];
-        glfwGetCursorPos(win.window, mouseX, mouseY);
-
-        int[] winWidth = new int[1], winHeight = new int[1];
-        glfwGetWindowSize(win.window, winWidth, winHeight);
-        if (winWidth[0] == 0 || winHeight[0] == 0)
-            return null;
-
-        float x = (float) (2.0 * mouseX[0] / winWidth[0] - 1.0);
-        float y = (float) (1.0 - 2.0 * mouseY[0] / winHeight[0]);
+        float x = (float) (2.0 * input.mouseX / win.width - 1.0);
+        float y = (float) (1.0 - 2.0 * input.mouseY / win.height);
 
         Vector4f rayStart = new Vector4f(x, y, -1.0f, 1.0f).mul(camera.editorInvVPMatrix);
         rayStart.div(rayStart.w);
