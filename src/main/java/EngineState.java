@@ -13,7 +13,9 @@ import java.util.List;
 public class EngineState {
     public long window;
     public int width = 1280;
-    public int height = 720;
+    public int height = 760;
+
+    public boolean isLocalGizmo = true;
 
     // [ImGui] binding object
     public final ImGuiImplGlfw imGuiGlfw = new ImGuiImplGlfw();
@@ -114,4 +116,9 @@ public class EngineState {
     public final float[][] normals = {
         { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
     };
+
+    public int activeGizmoAxis = 0; // 0: 없음, 1: X축, 2: Y축, 3: Z축
+
+    // 현재 기즈모가 어떤 조작을 담당하는지 나타내는 변수
+    public int gizmoMode = 0; // 0: 위치(Position), 1: 크기(Scale), 2: 회전(Rotation)
 }

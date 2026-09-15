@@ -12,6 +12,8 @@ public class Engine3DLWJGL {
     private final EngineUiSystem uiSystem = new EngineUiSystem(this);
     private final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(this);
     private final EngineGameSystem gameSystem = new EngineGameSystem(this);
+    // [추가] EditorGizmoSystem 인스턴스 생성
+    private final EditorGizmoSystem gizmoSystem = new EditorGizmoSystem(this);
 
     public long getWindow() {
         return state.window;
@@ -50,7 +52,7 @@ public class Engine3DLWJGL {
 
     private void update() {
         gameSystem.update();
-        collisionSystem.handleEditorObjectPicking();
+        gizmoSystem.update();
     }
 
     private void render() {

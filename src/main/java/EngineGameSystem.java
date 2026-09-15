@@ -15,7 +15,8 @@ public class EngineGameSystem {
         engine.state.objects.add(new BlockObject(new Vector3f(0, 3, 0), new Vector3f(1, 1, 1)));
         engine.state.objects.add(new BlockObject(new Vector3f(0, 0, 3), new Vector3f(1, 1, 1)));
 
-        engine.state.smoothCamPos.set(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y + 0.3f, engine.state.playerObject.pos.z);
+        engine.state.smoothCamPos.set(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y + 0.3f,
+                engine.state.playerObject.pos.z);
     }
 
     public void update() {
@@ -30,52 +31,79 @@ public class EngineGameSystem {
     }
 
     public void updateEditorMode() {
+        // 에디터 모드 카메라 초기 위치
         if (!engine.state.hasInitializedEditorCam) {
-            engine.state.editorCamPos.set(engine.state.smoothCamPos);
-            engine.state.editorCamYaw = engine.state.camYaw;
-            engine.state.editorCamPitch = engine.state.camPitch;
+            engine.state.editorCamPos.set(
+                    engine.state.playerObject.pos.x,
+                    engine.state.playerObject.pos.y + 2.0f,
+                    engine.state.playerObject.pos.z + 5.0f);
+            engine.state.editorCamYaw = 0.0f;
+            engine.state.editorCamPitch = (float) Math.toRadians(-10);
             engine.state.hasInitializedEditorCam = true;
         }
 
-        boolean isFlyActive = (org.lwjgl.glfw.GLFW.glfwGetMouseButton(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_MIDDLE) == org.lwjgl.glfw.GLFW.GLFW_PRESS) ||
-                (org.lwjgl.glfw.GLFW.glfwGetMouseButton(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT) == org.lwjgl.glfw.GLFW.GLFW_PRESS);
+        boolean isAltPressed = (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_ALT) == org.lwjgl.glfw.GLFW.GLFW_PRESS) ||
+                (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                        org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_ALT) == org.lwjgl.glfw.GLFW.GLFW_PRESS);
+
+        boolean isFlyActive = (org.lwjgl.glfw.GLFW.glfwGetMouseButton(engine.state.window,
+                org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_MIDDLE) == org.lwjgl.glfw.GLFW.GLFW_PRESS) ||
+                (org.lwjgl.glfw.GLFW.glfwGetMouseButton(engine.state.window,
+                        org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT) == org.lwjgl.glfw.GLFW.GLFW_PRESS
+                        && !isAltPressed);
 
         if (isFlyActive) {
             float sensitivity = 0.005f;
             engine.state.editorCamYaw += imgui.ImGui.getIO().getMouseDeltaX() * sensitivity;
             engine.state.editorCamPitch += imgui.ImGui.getIO().getMouseDeltaY() * sensitivity;
-            engine.state.editorCamPitch = Math.max((float)Math.toRadians(-85), Math.min((float)Math.toRadians(85), engine.state.editorCamPitch));
+            engine.state.editorCamPitch = Math.max((float) Math.toRadians(-85),
+                    Math.min((float) Math.toRadians(85), engine.state.editorCamPitch));
         }
 
-        float forwardX = (float)(Math.sin(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
-        float forwardY = (float)-Math.sin(engine.state.editorCamPitch);
-        float forwardZ = (float)(-Math.cos(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
+        float forwardX = (float) (Math.sin(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
+        float forwardY = (float) -Math.sin(engine.state.editorCamPitch);
+        float forwardZ = (float) (-Math.cos(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
 
-        float rightX = (float)Math.cos(engine.state.editorCamYaw);
-        float rightZ = (float)Math.sin(engine.state.editorCamYaw);
+        float rightX = (float) Math.cos(engine.state.editorCamYaw);
+        float rightZ = (float) Math.sin(engine.state.editorCamYaw);
 
-        boolean isCtrlPressed = (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS) ||
-                (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS);
+        boolean isCtrlPressed = (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS) ||
+                (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                        org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS);
 
         float currentSpeed = engine.state.editorSpeed * (isCtrlPressed ? engine.state.editorSpeedMultiplier : 1.0f);
         Vector3f editorMoveDir = new Vector3f();
 
         if (isFlyActive) {
-            if (engine.state.w) editorMoveDir.add(forwardX, forwardY, forwardZ);
-            if (engine.state.s) editorMoveDir.sub(forwardX, forwardY, forwardZ);
-            if (engine.state.a) editorMoveDir.sub(rightX, 0, rightZ);
-            if (engine.state.d) editorMoveDir.add(rightX, 0, rightZ);
+            if (engine.state.w)
+                editorMoveDir.add(forwardX, forwardY, forwardZ);
+            if (engine.state.s)
+                editorMoveDir.sub(forwardX, forwardY, forwardZ);
+            if (engine.state.a)
+                editorMoveDir.sub(rightX, 0, rightZ);
+            if (engine.state.d)
+                editorMoveDir.add(rightX, 0, rightZ);
         } else {
-            float flatForwardX = (float)Math.sin(engine.state.editorCamYaw);
-            float flatForwardZ = (float)-Math.cos(engine.state.editorCamYaw);
+            float flatForwardX = (float) Math.sin(engine.state.editorCamYaw);
+            float flatForwardZ = (float) -Math.cos(engine.state.editorCamYaw);
 
-            if (engine.state.w) editorMoveDir.add(flatForwardX, 0, flatForwardZ);
-            if (engine.state.s) editorMoveDir.sub(flatForwardX, 0, flatForwardZ);
-            if (engine.state.a) editorMoveDir.sub(rightX, 0, rightZ);
-            if (engine.state.d) editorMoveDir.add(rightX, 0, rightZ);
+            if (engine.state.w)
+                editorMoveDir.add(flatForwardX, 0, flatForwardZ);
+            if (engine.state.s)
+                editorMoveDir.sub(flatForwardX, 0, flatForwardZ);
+            if (engine.state.a)
+                editorMoveDir.sub(rightX, 0, rightZ);
+            if (engine.state.d)
+                editorMoveDir.add(rightX, 0, rightZ);
 
-            if (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_KEY_E) == org.lwjgl.glfw.GLFW.GLFW_PRESS) engine.state.editorCamPos.y += currentSpeed;
-            if (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_KEY_Q) == org.lwjgl.glfw.GLFW.GLFW_PRESS) engine.state.editorCamPos.y -= currentSpeed;
+            if (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                    org.lwjgl.glfw.GLFW.GLFW_KEY_E) == org.lwjgl.glfw.GLFW.GLFW_PRESS)
+                engine.state.editorCamPos.y += currentSpeed;
+            if (org.lwjgl.glfw.GLFW.glfwGetKey(engine.state.window,
+                    org.lwjgl.glfw.GLFW.GLFW_KEY_Q) == org.lwjgl.glfw.GLFW.GLFW_PRESS)
+                engine.state.editorCamPos.y -= currentSpeed;
         }
 
         if (editorMoveDir.lengthSquared() > 0) {
@@ -86,7 +114,8 @@ public class EngineGameSystem {
         float wheel = imgui.ImGui.getIO().getMouseWheel();
         if (wheel != 0) {
             float zoomSpeed = 0.6f;
-            engine.state.editorCamPos.add(forwardX * wheel * zoomSpeed, forwardY * wheel * zoomSpeed, forwardZ * wheel * zoomSpeed);
+            engine.state.editorCamPos.add(forwardX * wheel * zoomSpeed, forwardY * wheel * zoomSpeed,
+                    forwardZ * wheel * zoomSpeed);
         }
 
         engine.state.smoothCamPos.set(engine.state.editorCamPos);
@@ -96,9 +125,10 @@ public class EngineGameSystem {
 
     public void updatePlayMode() {
         float sensitivity = 0.0025f;
-        engine.state.camYaw += (float)engine.state.mouseDeltaX * sensitivity;
-        engine.state.camPitch += (float)engine.state.mouseDeltaY * sensitivity;
-        engine.state.camPitch = Math.max((float)Math.toRadians(-10), Math.min((float)Math.toRadians(85), engine.state.camPitch));
+        engine.state.camYaw += (float) engine.state.mouseDeltaX * sensitivity;
+        engine.state.camPitch += (float) engine.state.mouseDeltaY * sensitivity;
+        engine.state.camPitch = Math.max((float) Math.toRadians(-10),
+                Math.min((float) Math.toRadians(85), engine.state.camPitch));
 
         engine.state.mouseDeltaX = 0;
         engine.state.mouseDeltaY = 0;
@@ -106,10 +136,22 @@ public class EngineGameSystem {
         float speed = 0.08f;
         engine.state.moveDir.set(0, 0, 0);
 
-        if (engine.state.w) { engine.state.moveDir.x += Math.sin(engine.state.camYaw); engine.state.moveDir.z -= Math.cos(engine.state.camYaw); }
-        if (engine.state.s) { engine.state.moveDir.x -= Math.sin(engine.state.camYaw); engine.state.moveDir.z += Math.cos(engine.state.camYaw); }
-        if (engine.state.a) { engine.state.moveDir.x -= Math.cos(engine.state.camYaw); engine.state.moveDir.z -= Math.sin(engine.state.camYaw); }
-        if (engine.state.d) { engine.state.moveDir.x += Math.cos(engine.state.camYaw); engine.state.moveDir.z += Math.sin(engine.state.camYaw); }
+        if (engine.state.w) {
+            engine.state.moveDir.x += Math.sin(engine.state.camYaw);
+            engine.state.moveDir.z -= Math.cos(engine.state.camYaw);
+        }
+        if (engine.state.s) {
+            engine.state.moveDir.x -= Math.sin(engine.state.camYaw);
+            engine.state.moveDir.z += Math.cos(engine.state.camYaw);
+        }
+        if (engine.state.a) {
+            engine.state.moveDir.x -= Math.cos(engine.state.camYaw);
+            engine.state.moveDir.z -= Math.sin(engine.state.camYaw);
+        }
+        if (engine.state.d) {
+            engine.state.moveDir.x += Math.cos(engine.state.camYaw);
+            engine.state.moveDir.z += Math.sin(engine.state.camYaw);
+        }
 
         if (engine.state.moveDir.lengthSquared() > 0) {
             engine.state.moveDir.normalize().mul(speed);
@@ -117,7 +159,7 @@ public class EngineGameSystem {
             new EngineCollisionSystem(engine).resolveHorizontalCollision(true, engine.state.moveDir.x);
             engine.state.playerObject.pos.z += engine.state.moveDir.z;
             new EngineCollisionSystem(engine).resolveHorizontalCollision(false, engine.state.moveDir.z);
-            engine.state.playerObject.rotation.y = (float)Math.atan2(engine.state.moveDir.x, -engine.state.moveDir.z);
+            engine.state.playerObject.rotation.y = (float) Math.atan2(engine.state.moveDir.x, -engine.state.moveDir.z);
         }
 
         engine.state.scaleX += (1.0f - engine.state.scaleX) * 0.15f;
@@ -136,8 +178,9 @@ public class EngineGameSystem {
 
         for (int i = 1; i < engine.state.objects.size(); i++) {
             LevelObject obj = engine.state.objects.get(i);
-            if (obj instanceof BlockObject && new EngineCollisionSystem(engine).checkAABBOverlap(engine.state.playerObject, (BlockObject)obj)) {
-                BlockObject b = (BlockObject)obj;
+            if (obj instanceof BlockObject && new EngineCollisionSystem(engine)
+                    .checkAABBOverlap(engine.state.playerObject, (BlockObject) obj)) {
+                BlockObject b = (BlockObject) obj;
                 if (engine.state.velocityY < 0) {
                     engine.state.playerObject.pos.y = b.maxY() + engine.state.playerObject.size.y / 2.0f;
                     engine.state.velocityY = 0;
@@ -166,7 +209,8 @@ public class EngineGameSystem {
 
         engine.state.wasGrounded = engine.state.isGrounded;
 
-        engine.state.targetCam.set(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y + 0.3f, engine.state.playerObject.pos.z);
+        engine.state.targetCam.set(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y + 0.3f,
+                engine.state.playerObject.pos.z);
         engine.state.smoothCamPos.lerp(engine.state.targetCam, 0.15f);
     }
 }

@@ -93,6 +93,21 @@ public class EngineUiSystem {
             ImGui.text("Editor Mode Active");
             ImGui.separator();
 
+            // [추가] 기즈모 모드 선택 UI (숫자키 1, 2, 3과 연동)
+            ImGui.text("Gizmo Mode (1:Pos, 2:Scale, 3:Rot):");
+            if (ImGui.radioButton("Position [1]", engine.state.gizmoMode == 0)) {
+                engine.state.gizmoMode = 0;
+            }
+            ImGui.sameLine();
+            if (ImGui.radioButton("Scale [2]", engine.state.gizmoMode == 1)) {
+                engine.state.gizmoMode = 1;
+            }
+            ImGui.sameLine();
+            if (ImGui.radioButton("Rotation [3]", engine.state.gizmoMode == 2)) {
+                engine.state.gizmoMode = 2;
+            }
+            ImGui.separator();
+
             ImGui.text("Spawn Panel");
             if (ImGui.button("small block")) {
                 engine.state.objects.add(new BlockObject(new Vector3f(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y, engine.state.playerObject.pos.z - 3.0f), new Vector3f(1.0f, 1.0f, 1.0f)));
