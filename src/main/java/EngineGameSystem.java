@@ -34,11 +34,11 @@ public class EngineGameSystem {
         // 에디터 모드 카메라 초기 위치
         if (!engine.state.hasInitializedEditorCam) {
             engine.state.editorCamPos.set(
-                    engine.state.playerObject.pos.x,
-                    engine.state.playerObject.pos.y + 2.0f,
-                    engine.state.playerObject.pos.z + 5.0f);
-            engine.state.editorCamYaw = 0.0f;
-            engine.state.editorCamPitch = (float) Math.toRadians(-10);
+                    engine.state.playerObject.pos.x + 3.0f,
+                    engine.state.playerObject.pos.y + 3.0f,
+                    engine.state.playerObject.pos.z + 3.0f);
+            engine.state.editorCamYaw = -0.75f;
+            engine.state.editorCamPitch = (float) Math.toRadians(30);
             engine.state.hasInitializedEditorCam = true;
         }
 
