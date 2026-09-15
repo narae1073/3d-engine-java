@@ -69,6 +69,9 @@ public class EngineRenderer {
                 "}\n";
 
         engine.state.depthShaderProgram = createProgram(depthVS, depthFS);
+        // 유니폼 로케이션 초기화 시점에 한 번만 캐싱
+        engine.state.locDepthLightSpace = glGetUniformLocation(engine.state.depthShaderProgram, "lightSpaceMatrix");
+        engine.state.locDepthModel = glGetUniformLocation(engine.state.depthShaderProgram, "model");
 
         String mainVS = "#version 120\n" +
                 "uniform mat4 model;\n" +
@@ -187,14 +190,13 @@ public class EngineRenderer {
         glClear(GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(engine.state.depthShaderProgram);
-        int locDepthLightSpace = glGetUniformLocation(engine.state.depthShaderProgram, "lightSpaceMatrix");
-        int locDepthModel = glGetUniformLocation(engine.state.depthShaderProgram, "model");
 
-        glUniformMatrix4fv(locDepthLightSpace, false, engine.state.lightSpaceMatrix.get(engine.state.matrixBuffer));
+        glUniformMatrix4fv(engine.state.locDepthLightSpace, false,
+                engine.state.lightSpaceMatrix.get(engine.state.matrixBuffer));
 
         glEnable(GL_CULL_FACE);
         glCullFace(GL_FRONT);
-        renderScene(locDepthModel, false);
+        renderScene(engine.state.locDepthModel, false);
         glCullFace(GL_BACK);
         glDisable(GL_CULL_FACE);
 
@@ -272,7 +274,11 @@ public class EngineRenderer {
             glUniform1i(engine.state.locUseLighting, 0);
             glUniform3f(engine.state.locObjectColor, 1.0f, 1.0f, 0.0f);
             glUniformMatrix4fv(engine.state.locModel, false, model.get(engine.state.matrixBuffer));
-            drawCubeGeometry();
+            if (selObj instanceof PlayerObject) {
+                drawSphereGeometry();
+            } else {
+                drawCubeGeometry();
+            }
 
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glLineWidth(1.0f);
@@ -464,7 +470,11 @@ public class EngineRenderer {
             }
 
             glUniformMatrix4fv(modelLoc, false, engine.state.modelMatrix.get(engine.state.matrixBuffer));
-            drawCubeGeometry();
+            if (obj instanceof PlayerObject) {
+                drawSphereGeometry();
+            } else {
+                drawCubeGeometry();
+            }
         }
     }
 
@@ -478,6 +488,36 @@ public class EngineRenderer {
             }
         }
         glEnd();
+    }
+
+    public void drawSphereGeometry() {
+        int stacks = 20;
+        int slices = 20;
+        float radius = 0.5f; // 큐브(-0.5~0.5)랑 크기 맞춤
+
+        for (int i = 0; i < stacks; i++) {
+            float lat0 = (float) Math.PI * (-0.5f + (float) i / stacks);
+            float lat1 = (float) Math.PI * (-0.5f + (float) (i + 1) / stacks);
+
+            float y0 = (float) Math.sin(lat0), r0 = (float) Math.cos(lat0);
+            float y1 = (float) Math.sin(lat1), r1 = (float) Math.cos(lat1);
+
+            glBegin(GL_QUAD_STRIP);
+            for (int j = 0; j <= slices; j++) {
+                float lng = 2.0f * (float) Math.PI * (float) j / slices;
+                float cx = (float) Math.cos(lng);
+                float cz = (float) Math.sin(lng);
+
+                float nx0 = cx * r0, nz0 = cz * r0;
+                glNormal3f(nx0, y0, nz0);
+                glVertex3f(radius * nx0, radius * y0, radius * nz0);
+
+                float nx1 = cx * r1, nz1 = cz * r1;
+                glNormal3f(nx1, y1, nz1);
+                glVertex3f(radius * nx1, radius * y1, radius * nz1);
+            }
+            glEnd();
+        }
     }
 
     public void drawGroundGeometry() {

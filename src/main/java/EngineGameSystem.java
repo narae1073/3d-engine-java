@@ -153,12 +153,13 @@ public class EngineGameSystem {
             engine.state.moveDir.z += Math.sin(engine.state.camYaw);
         }
 
+        // 수평 이동
         if (engine.state.moveDir.lengthSquared() > 0) {
             engine.state.moveDir.normalize().mul(speed);
             engine.state.playerObject.pos.x += engine.state.moveDir.x;
-            new EngineCollisionSystem(engine).resolveHorizontalCollision(true, engine.state.moveDir.x);
+            engine.collisionSystem.resolveHorizontalCollision(true, engine.state.moveDir.x);   // ← 수정
             engine.state.playerObject.pos.z += engine.state.moveDir.z;
-            new EngineCollisionSystem(engine).resolveHorizontalCollision(false, engine.state.moveDir.z);
+            engine.collisionSystem.resolveHorizontalCollision(false, engine.state.moveDir.z);  // ← 수정
             engine.state.playerObject.rotation.y = (float) Math.atan2(engine.state.moveDir.x, -engine.state.moveDir.z);
         }
 
@@ -176,6 +177,7 @@ public class EngineGameSystem {
             engine.state.isGrounded = true;
         }
 
+        // 수직 충돌
         for (int i = 1; i < engine.state.objects.size(); i++) {
             LevelObject obj = engine.state.objects.get(i);
             if (obj instanceof BlockObject && new EngineCollisionSystem(engine)

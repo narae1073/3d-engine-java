@@ -10,7 +10,7 @@ public class Engine3DLWJGL {
     private final EngineInputSystem inputSystem = new EngineInputSystem(this);
     private final EngineRenderer renderer = new EngineRenderer(this);
     private final EngineUiSystem uiSystem = new EngineUiSystem(this);
-    private final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(this);
+    public final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(this);
     private final EngineGameSystem gameSystem = new EngineGameSystem(this);
     // [추가] EditorGizmoSystem 인스턴스 생성
     private final EditorGizmoSystem gizmoSystem = new EditorGizmoSystem(this);
