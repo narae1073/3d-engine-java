@@ -1,20 +1,35 @@
 import imgui.ImGui;
-import imgui.gl3.ImGuiImplGl3;
-import imgui.glfw.ImGuiImplGlfw;
 import org.joml.Vector3f;
 
 public class EngineUiSystem implements EngineSystem {
-    private final Engine3DLWJGL engine;
+    private final EngineState state;   // ImGui 백엔드 + 윈도우 접근용
+    private final CameraState camera;
+    private final LightState light;
+    private final PhysicsState physics;
+    private final EditorState editor;
+    private final WorldState world;
 
-    public EngineUiSystem(Engine3DLWJGL engine) {
-        this.engine = engine;
+    public EngineUiSystem(EngineState state, CameraState camera, LightState light,
+                          PhysicsState physics, EditorState editor, WorldState world) {
+        this.state = state;
+        this.camera = camera;
+        this.light = light;
+        this.physics = physics;
+        this.editor = editor;
+        this.world = world;
     }
 
     @Override
     public void render() {
-        engine.state.imGuiGlfw.newFrame();
+        // ============================================================
+        // ImGui 프레임 시작 (필수!)
+        // ============================================================
+        state.imGuiGlfw.newFrame();
         ImGui.newFrame();
 
+        // ============================================================
+        // 1. Engine Control Panel
+        // ============================================================
         ImGui.begin("Engine Control Panel");
         float fps = ImGui.getIO().getFramerate();
         float frameTime = 1000.0f / (fps > 0 ? fps : 1.0f);
@@ -26,115 +41,140 @@ public class EngineUiSystem implements EngineSystem {
         ImGui.text("Press TAB to toggle Cursor & UI Control");
         ImGui.separator();
 
-        if (ImGui.checkbox("Editor Mode", engine.state.isEditorMode)) {
-            if (engine.state.isEditorMode.get()) {
-                engine.state.isUiMode = true;
-                org.lwjgl.glfw.GLFW.glfwSetInputMode(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL);
+        // 에디터 모드 토글
+        if (ImGui.checkbox("Editor Mode", camera.isEditorMode)) {
+            if (camera.isEditorMode.get()) {
+                state.input.isUiMode = true;
+                org.lwjgl.glfw.GLFW.glfwSetInputMode(
+                        state.window.window,
+                        org.lwjgl.glfw.GLFW.GLFW_CURSOR,
+                        org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL);
             } else {
-                engine.state.isUiMode = false;
-                org.lwjgl.glfw.GLFW.glfwSetInputMode(engine.state.window, org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED);
-                engine.state.lastMouseX = -1;
-                engine.state.lastMouseY = -1;
+                state.input.isUiMode = false;
+                org.lwjgl.glfw.GLFW.glfwSetInputMode(
+                        state.window.window,
+                        org.lwjgl.glfw.GLFW.GLFW_CURSOR,
+                        org.lwjgl.glfw.GLFW.GLFW_CURSOR_DISABLED);
+                state.input.lastMouseX = -1;
+                state.input.lastMouseY = -1;
             }
         }
 
-        if (ImGui.checkbox("Orthographic Mode", engine.state.isOrthographic)) { }
+        ImGui.checkbox("Orthographic Mode", camera.isOrthographic);
 
         ImGui.separator();
 
-        float[] lp = { engine.state.lightPos.x, engine.state.lightPos.y, engine.state.lightPos.z };
+        // 조명
+        float[] lp = { light.lightPos.x, light.lightPos.y, light.lightPos.z };
         if (ImGui.sliderFloat3("Light Position", lp, -20.0f, 20.0f)) {
-            engine.state.lightPos.set(lp[0], lp[1], lp[2]);
+            light.lightPos.set(lp[0], lp[1], lp[2]);
         }
 
-        float[] la = { engine.state.lightAmbient };
+        float[] la = { light.lightAmbient };
         if (ImGui.sliderFloat("Ambient Light", la, 0.0f, 1.0f)) {
-            engine.state.lightAmbient = la[0];
+            light.lightAmbient = la[0];
         }
 
-        float[] ld = { engine.state.lightDiffuse };
+        float[] ld = { light.lightDiffuse };
         if (ImGui.sliderFloat("Diffuse Light", ld, 0.0f, 1.0f)) {
-            engine.state.lightDiffuse = ld[0];
+            light.lightDiffuse = ld[0];
         }
 
         ImGui.separator();
 
-        float[] jp = { engine.state.jumpStrength };
+        // 물리
+        float[] jp = { physics.jumpStrength };
         if (ImGui.sliderFloat("Jump Strength", jp, 0.1f, 0.8f)) {
-            engine.state.jumpStrength = jp[0];
+            physics.jumpStrength = jp[0];
         }
 
-        float[] gr = { engine.state.gravity };
+        float[] gr = { physics.gravity };
         if (ImGui.sliderFloat("Gravity", gr, -0.05f, -0.001f)) {
-            engine.state.gravity = gr[0];
+            physics.gravity = gr[0];
         }
 
-        float[] cd = { engine.state.camDistance };
+        float[] cd = { camera.camDistance };
         if (ImGui.sliderFloat("Camera Distance", cd, 2.0f, 15.0f)) {
-            engine.state.camDistance = cd[0];
+            camera.camDistance = cd[0];
         }
 
         ImGui.separator();
         ImGui.text("Camera Settings");
 
-        float[] spdArr = { engine.state.editorSpeed };
+        float[] spdArr = { camera.editorSpeed };
         if (ImGui.sliderFloat("Base Speed", spdArr, 0.05f, 1.0f)) {
-            engine.state.editorSpeed = spdArr[0];
+            camera.editorSpeed = spdArr[0];
         }
 
-        float[] multArr = { engine.state.editorSpeedMultiplier };
+        float[] multArr = { camera.editorSpeedMultiplier };
         if (ImGui.sliderFloat("Ctrl Multiplier", multArr, 1.0f, 5.0f)) {
-            engine.state.editorSpeedMultiplier = multArr[0];
+            camera.editorSpeedMultiplier = multArr[0];
         }
 
         ImGui.end();
 
+        // ============================================================
+        // 2. Level Editor
+        // ============================================================
         ImGui.begin("Level Editor");
-        if (engine.state.isEditorMode.get()) {
+        if (camera.isEditorMode.get()) {
             ImGui.text("Editor Mode Active");
             ImGui.separator();
 
-            // [추가] 기즈모 모드 선택 UI (숫자키 1, 2, 3과 연동)
+            // 기즈모 모드 선택
             ImGui.text("Gizmo Mode (1:Pos, 2:Scale, 3:Rot):");
-            if (ImGui.radioButton("Position [1]", engine.state.gizmoMode == 0)) {
-                engine.state.gizmoMode = 0;
+            if (ImGui.radioButton("Position [1]", editor.gizmoMode == 0)) {
+                editor.gizmoMode = 0;
             }
             ImGui.sameLine();
-            if (ImGui.radioButton("Scale [2]", engine.state.gizmoMode == 1)) {
-                engine.state.gizmoMode = 1;
+            if (ImGui.radioButton("Scale [2]", editor.gizmoMode == 1)) {
+                editor.gizmoMode = 1;
             }
             ImGui.sameLine();
-            if (ImGui.radioButton("Rotation [3]", engine.state.gizmoMode == 2)) {
-                engine.state.gizmoMode = 2;
+            if (ImGui.radioButton("Rotation [3]", editor.gizmoMode == 2)) {
+                editor.gizmoMode = 2;
             }
             ImGui.separator();
 
+            // 스폰 패널
             ImGui.text("Spawn Panel");
             if (ImGui.button("small block")) {
-                engine.state.objects.add(new BlockObject(new Vector3f(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y, engine.state.playerObject.pos.z - 3.0f), new Vector3f(1.0f, 1.0f, 1.0f)));
-                engine.state.selectedObjectIndex = engine.state.objects.size() - 1;
+                world.objects.add(new BlockObject(
+                        new Vector3f(world.playerObject.pos.x,
+                                     world.playerObject.pos.y,
+                                     world.playerObject.pos.z - 3.0f),
+                        new Vector3f(1.0f, 1.0f, 1.0f)));
+                editor.selectedObjectIndex = world.objects.size() - 1;
             }
             ImGui.sameLine();
             if (ImGui.button("big block")) {
-                engine.state.objects.add(new BlockObject(new Vector3f(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y, engine.state.playerObject.pos.z - 3.0f), new Vector3f(4.0f, 2.0f, 4.0f)));
-                engine.state.selectedObjectIndex = engine.state.objects.size() - 1;
+                world.objects.add(new BlockObject(
+                        new Vector3f(world.playerObject.pos.x,
+                                     world.playerObject.pos.y,
+                                     world.playerObject.pos.z - 3.0f),
+                        new Vector3f(4.0f, 2.0f, 4.0f)));
+                editor.selectedObjectIndex = world.objects.size() - 1;
             }
 
             if (ImGui.button("ground block")) {
-                engine.state.objects.add(new BlockObject(new Vector3f(engine.state.playerObject.pos.x, engine.state.playerObject.pos.y - 1.0f, engine.state.playerObject.pos.z - 3.0f), new Vector3f(10.0f, 0.5f, 10.0f)));
-                engine.state.selectedObjectIndex = engine.state.objects.size() - 1;
+                world.objects.add(new BlockObject(
+                        new Vector3f(world.playerObject.pos.x,
+                                     world.playerObject.pos.y - 1.0f,
+                                     world.playerObject.pos.z - 3.0f),
+                        new Vector3f(10.0f, 0.5f, 10.0f)));
+                editor.selectedObjectIndex = world.objects.size() - 1;
             }
 
             ImGui.separator();
             ImGui.text("Object List");
             ImGui.beginChild("ObjectListRegion", 0, 150, true);
 
-            for (int i = 0; i < engine.state.objects.size(); i++) {
-                LevelObject obj = engine.state.objects.get(i);
-                boolean isSelected = (engine.state.selectedObjectIndex == i);
+            for (int i = 0; i < world.objects.size(); i++) {
+                LevelObject obj = world.objects.get(i);
+                boolean isSelected = (editor.selectedObjectIndex == i);
 
                 if (ImGui.selectable(obj.getDisplayName() + " [" + i + "]", isSelected)) {
-                    engine.state.selectedObjectIndex = i;
+                    editor.selectedObjectIndex = i;
                 }
             }
             ImGui.endChild();
@@ -142,10 +182,11 @@ public class EngineUiSystem implements EngineSystem {
             ImGui.separator();
             ImGui.text("Inspector");
 
-            if (engine.state.selectedObjectIndex == -1 || engine.state.selectedObjectIndex >= engine.state.objects.size()) {
+            if (editor.selectedObjectIndex == -1
+                    || editor.selectedObjectIndex >= world.objects.size()) {
                 ImGui.textDisabled("No object selected.");
             } else {
-                LevelObject selObj = engine.state.objects.get(engine.state.selectedObjectIndex);
+                LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
                 ImGui.text("Selected: " + selObj.getDisplayName());
 
                 float[] oPos = { selObj.pos.x, selObj.pos.y, selObj.pos.z };
@@ -159,22 +200,21 @@ public class EngineUiSystem implements EngineSystem {
                 }
 
                 float[] oRot = {
-                    (float)Math.toDegrees(selObj.rotation.x),
-                    (float)Math.toDegrees(selObj.rotation.y),
-                    (float)Math.toDegrees(selObj.rotation.z)
+                    (float) Math.toDegrees(selObj.rotation.x),
+                    (float) Math.toDegrees(selObj.rotation.y),
+                    (float) Math.toDegrees(selObj.rotation.z)
                 };
                 if (ImGui.dragFloat3("Rotation##Object", oRot, 1.0f, -360.0f, 360.0f)) {
                     selObj.rotation.set(
-                        (float)Math.toRadians(oRot[0]),
-                        (float)Math.toRadians(oRot[1]),
-                        (float)Math.toRadians(oRot[2])
-                    );
+                            (float) Math.toRadians(oRot[0]),
+                            (float) Math.toRadians(oRot[1]),
+                            (float) Math.toRadians(oRot[2]));
                 }
 
-                if (engine.state.selectedObjectIndex > 0) {
+                if (editor.selectedObjectIndex > 0) {
                     if (ImGui.button("Delete Object")) {
-                        engine.state.objects.remove(engine.state.selectedObjectIndex);
-                        engine.state.selectedObjectIndex = -1;
+                        world.objects.remove(editor.selectedObjectIndex);
+                        editor.selectedObjectIndex = -1;
                     }
                 } else {
                     ImGui.textDisabled("Cannot delete Player entity.");
@@ -186,7 +226,10 @@ public class EngineUiSystem implements EngineSystem {
 
         ImGui.end();
 
+        // ============================================================
+        // ImGui 프레임 종료 및 렌더 (필수!)
+        // ============================================================
         ImGui.render();
-        engine.state.imGuiGl3.renderDrawData(ImGui.getDrawData());
+        state.imGuiGl3.renderDrawData(ImGui.getDrawData());
     }
 }

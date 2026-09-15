@@ -6,36 +6,93 @@ import org.lwjgl.BufferUtils;
 
 import java.nio.FloatBuffer;
 
-import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL13.GL_CLAMP_TO_BORDER;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13.glActiveTexture;
-import static org.lwjgl.opengl.GL20.GL_FRAGMENT_SHADER;
-import static org.lwjgl.opengl.GL20.GL_VERTEX_SHADER;
-import static org.lwjgl.opengl.GL20.glAttachShader;
-import static org.lwjgl.opengl.GL20.glCompileShader;
-import static org.lwjgl.opengl.GL20.glCreateProgram;
-import static org.lwjgl.opengl.GL20.glCreateShader;
-import static org.lwjgl.opengl.GL20.glDeleteProgram;
-import static org.lwjgl.opengl.GL20.glDeleteShader;
-import static org.lwjgl.opengl.GL20.glGetUniformLocation;
-import static org.lwjgl.opengl.GL20.glLinkProgram;
-import static org.lwjgl.opengl.GL20.glShaderSource;
-import static org.lwjgl.opengl.GL20.glUniform1f;
-import static org.lwjgl.opengl.GL20.glUniform1i;
-import static org.lwjgl.opengl.GL20.glUniform3f;
-import static org.lwjgl.opengl.GL20.glUniformMatrix4fv;
-import static org.lwjgl.opengl.GL20.glUseProgram;
+import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
+/**
+ * 렌더링 전용 시스템.
+ *
+ * 이전에 EngineState에 흩어져 있던 매트릭스/버퍼/셰이더 로케이션/FBO 핸들은
+ * 렌더링 파이프라인 내부 구현 세부사항이므로 전부 이 클래스의 private 필드로 흡수했다.
+ * 외부 시스템은 카메라/조명/물리/에디터/월드 컴포넌트만 참조한다.
+ *
+ * 단 하나의 예외: 에디터 기즈모 피킹을 위해 EditorGizmoSystem이 필요로 하는
+ * 역 VP 행렬(editorInvVPMatrix)은 CameraState에 기록한다. (렌더 패스에서 계산해
+ * 카메라 컴포넌트에 되돌려 놓는 단방향 흐름)
+ */
 public class EngineRenderer implements EngineSystem {
-    private final Engine3DLWJGL engine;
 
-    public EngineRenderer(Engine3DLWJGL engine) {
-        this.engine = engine;
+    // ============================================================
+    // 주입된 컴포넌트 (읽기 전용 참조)
+    // ============================================================
+    private final WindowContext win;
+    private final CameraState camera;
+    private final LightState light;
+    private final PhysicsState physics;
+    private final EditorState editor;
+    private final WorldState world;
+
+    // ============================================================
+    // 렌더 전용 상태 (이전 EngineState에서 흡수)
+    // ============================================================
+    // 셰도우 맵
+    private final int SHADOW_WIDTH = 2048;
+    private final int SHADOW_HEIGHT = 2048;
+    private int depthFBO;
+    private int depthMap;
+
+    // 셰이더 프로그램
+    private int mainShaderProgram;
+    private int depthShaderProgram;
+
+    // main shader uniform locations
+    private int locModel, locView, locProj, locLightSpaceMatrix;
+    private int locLightPos, locLightAmbient, locLightDiffuse, locObjectColor, locUseLighting, locShadowMap;
+
+    // depth pass uniform locations
+    private int locDepthLightSpace, locDepthModel;
+
+    // 매트릭스/버퍼 (프레임 간 재사용)
+    private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
+    private final Matrix4f projMatrix = new Matrix4f();
+    private final Matrix4f viewMatrix = new Matrix4f();
+    private final Matrix4f lightProjMatrix = new Matrix4f();
+    private final Matrix4f lightViewMatrix = new Matrix4f();
+    private final Matrix4f lightSpaceMatrix = new Matrix4f();
+    private final Matrix4f modelMatrix = new Matrix4f();
+
+    // ============================================================
+    // 지오메트리 (큐브는 정적 상수로 승격)
+    // ============================================================
+    private static final float[][] CUBE_VERTICES = {
+        { -0.5f, -0.5f, -0.5f }, {  0.5f, -0.5f, -0.5f }, {  0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f, -0.5f },
+        { -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f }, { -0.5f,  0.5f,  0.5f }
+    };
+    private static final int[][] CUBE_FACES = {
+        { 4, 5, 6, 7 }, { 1, 0, 3, 2 }, { 3, 2, 6, 7 },
+        { 4, 0, 1, 5 }, { 5, 1, 2, 6 }, { 0, 4, 7, 3 }
+    };
+    private static final float[][] CUBE_NORMALS = {
+        { 0, 0, 1 }, { 0, 0, -1 }, { 0, 1, 0 }, { 0, -1, 0 }, { 1, 0, 0 }, { -1, 0, 0 }
+    };
+
+    public EngineRenderer(WindowContext win, CameraState camera, LightState light,
+                          PhysicsState physics, EditorState editor, WorldState world) {
+        this.win = win;
+        this.camera = camera;
+        this.light = light;
+        this.physics = physics;
+        this.editor = editor;
+        this.world = world;
     }
 
+    // ============================================================
+    // 생명주기
+    // ============================================================
     @Override
     public void init() {
         initShadowFBO();
@@ -44,18 +101,21 @@ public class EngineRenderer implements EngineSystem {
 
     @Override
     public void dispose() {
-        glDeleteFramebuffers(engine.state.depthFBO);
-        glDeleteTextures(engine.state.depthMap);
-        glDeleteProgram(engine.state.mainShaderProgram);
-        glDeleteProgram(engine.state.depthShaderProgram);
+        glDeleteFramebuffers(depthFBO);
+        glDeleteTextures(depthMap);
+        glDeleteProgram(mainShaderProgram);
+        glDeleteProgram(depthShaderProgram);
     }
 
-    public void initShadowFBO() {
-        engine.state.depthFBO = glGenFramebuffers();
-        engine.state.depthMap = glGenTextures();
+    // ============================================================
+    // 셰도우 FBO
+    // ============================================================
+    private void initShadowFBO() {
+        depthFBO = glGenFramebuffers();
+        depthMap = glGenTextures();
 
-        glBindTexture(GL_TEXTURE_2D, engine.state.depthMap);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, engine.state.SHADOW_WIDTH, engine.state.SHADOW_HEIGHT, 0,
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0,
                 GL_DEPTH_COMPONENT, GL_FLOAT, (FloatBuffer) null);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -64,14 +124,17 @@ public class EngineRenderer implements EngineSystem {
         float[] borderColor = { 1.0f, 1.0f, 1.0f, 1.0f };
         glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, engine.state.depthFBO);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, engine.state.depthMap, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    public void initShaders() {
+    // ============================================================
+    // 셰이더 컴파일
+    // ============================================================
+    private void initShaders() {
         String depthVS = "#version 120\n" +
                 "uniform mat4 lightSpaceMatrix;\n" +
                 "uniform mat4 model;\n" +
@@ -82,10 +145,9 @@ public class EngineRenderer implements EngineSystem {
                 "void main() {\n" +
                 "}\n";
 
-        engine.state.depthShaderProgram = createProgram(depthVS, depthFS);
-        // 유니폼 로케이션 초기화 시점에 한 번만 캐싱 (렌더 루프에서 매 프레임 조회 방지)
-        engine.state.locDepthLightSpace = glGetUniformLocation(engine.state.depthShaderProgram, "lightSpaceMatrix");
-        engine.state.locDepthModel = glGetUniformLocation(engine.state.depthShaderProgram, "model");
+        depthShaderProgram = createProgram(depthVS, depthFS);
+        locDepthLightSpace = glGetUniformLocation(depthShaderProgram, "lightSpaceMatrix");
+        locDepthModel = glGetUniformLocation(depthShaderProgram, "model");
 
         String mainVS = "#version 120\n" +
                 "uniform mat4 model;\n" +
@@ -143,21 +205,21 @@ public class EngineRenderer implements EngineSystem {
                 "    gl_FragColor = vec4(result, 1.0);\n" +
                 "}\n";
 
-        engine.state.mainShaderProgram = createProgram(mainVS, mainFS);
+        mainShaderProgram = createProgram(mainVS, mainFS);
 
-        engine.state.locModel = glGetUniformLocation(engine.state.mainShaderProgram, "model");
-        engine.state.locView = glGetUniformLocation(engine.state.mainShaderProgram, "view");
-        engine.state.locProj = glGetUniformLocation(engine.state.mainShaderProgram, "proj");
-        engine.state.locLightSpaceMatrix = glGetUniformLocation(engine.state.mainShaderProgram, "lightSpaceMatrix");
-        engine.state.locLightPos = glGetUniformLocation(engine.state.mainShaderProgram, "lightPos");
-        engine.state.locLightAmbient = glGetUniformLocation(engine.state.mainShaderProgram, "lightAmbient");
-        engine.state.locLightDiffuse = glGetUniformLocation(engine.state.mainShaderProgram, "lightDiffuse");
-        engine.state.locObjectColor = glGetUniformLocation(engine.state.mainShaderProgram, "objectColor");
-        engine.state.locUseLighting = glGetUniformLocation(engine.state.mainShaderProgram, "useLighting");
-        engine.state.locShadowMap = glGetUniformLocation(engine.state.mainShaderProgram, "shadowMap");
+        locModel = glGetUniformLocation(mainShaderProgram, "model");
+        locView = glGetUniformLocation(mainShaderProgram, "view");
+        locProj = glGetUniformLocation(mainShaderProgram, "proj");
+        locLightSpaceMatrix = glGetUniformLocation(mainShaderProgram, "lightSpaceMatrix");
+        locLightPos = glGetUniformLocation(mainShaderProgram, "lightPos");
+        locLightAmbient = glGetUniformLocation(mainShaderProgram, "lightAmbient");
+        locLightDiffuse = glGetUniformLocation(mainShaderProgram, "lightDiffuse");
+        locObjectColor = glGetUniformLocation(mainShaderProgram, "objectColor");
+        locUseLighting = glGetUniformLocation(mainShaderProgram, "useLighting");
+        locShadowMap = glGetUniformLocation(mainShaderProgram, "shadowMap");
     }
 
-    public int createProgram(String vCode, String fCode) {
+    private int createProgram(String vCode, String fCode) {
         int vs = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vs, vCode);
         glCompileShader(vs);
@@ -176,314 +238,155 @@ public class EngineRenderer implements EngineSystem {
         return prog;
     }
 
+    // ============================================================
+    // 메인 렌더 패스
+    // ============================================================
+    @Override
     public void render() {
+        // ---------- 1. 라이트 공간 행렬 계산 ----------
         float nearPlane = 1.0f, farPlane = 40.0f;
-        engine.state.lightProjMatrix.identity().setOrtho(-15.0f, 15.0f, -15.0f, 15.0f, nearPlane, farPlane);
+        lightProjMatrix.identity().setOrtho(-15.0f, 15.0f, -15.0f, 15.0f, nearPlane, farPlane);
 
-        Vector3f lightTarget = new Vector3f(engine.state.playerObject.pos.x, 0.0f, engine.state.playerObject.pos.z);
-        Vector3f actualLightPos = new Vector3f(engine.state.playerObject.pos.x + engine.state.lightPos.x,
-                engine.state.lightPos.y, engine.state.playerObject.pos.z + engine.state.lightPos.z);
-        engine.state.lightViewMatrix.identity().lookAt(actualLightPos, lightTarget, new Vector3f(0.0f, 1.0f, 0.0f));
+        Vector3f lightTarget = new Vector3f(world.playerObject.pos.x, 0.0f, world.playerObject.pos.z);
+        Vector3f actualLightPos = new Vector3f(
+                world.playerObject.pos.x + light.lightPos.x,
+                light.lightPos.y,
+                world.playerObject.pos.z + light.lightPos.z);
+        lightViewMatrix.identity().lookAt(actualLightPos, lightTarget, new Vector3f(0.0f, 1.0f, 0.0f));
+        lightProjMatrix.mul(lightViewMatrix, lightSpaceMatrix);
 
-        engine.state.lightProjMatrix.mul(engine.state.lightViewMatrix, engine.state.lightSpaceMatrix);
-
-        Matrix4f shadowMatrix = new Matrix4f(engine.state.lightSpaceMatrix);
-        org.joml.Vector4f shadowOrigin = new org.joml.Vector4f(0.0f, 0.0f, 0.0f, 1.0f).mul(shadowMatrix);
-        shadowOrigin.mul(engine.state.SHADOW_WIDTH / 2.0f);
+        // ---------- 2. 그림자 떨림 방지 (라운딩) ----------
+        Matrix4f shadowMatrix = new Matrix4f(lightSpaceMatrix);
+        Vector4f shadowOrigin = new Vector4f(0.0f, 0.0f, 0.0f, 1.0f).mul(shadowMatrix);
+        shadowOrigin.mul(SHADOW_WIDTH / 2.0f);
 
         float roundedX = Math.round(shadowOrigin.x);
         float roundedY = Math.round(shadowOrigin.y);
-        float dx = (roundedX - shadowOrigin.x) * (2.0f / engine.state.SHADOW_WIDTH);
-        float dy = (roundedY - shadowOrigin.y) * (2.0f / engine.state.SHADOW_HEIGHT);
+        float dx = (roundedX - shadowOrigin.x) * (2.0f / SHADOW_WIDTH);
+        float dy = (roundedY - shadowOrigin.y) * (2.0f / SHADOW_HEIGHT);
 
         Matrix4f roundMatrix = new Matrix4f().translate(dx, dy, 0.0f);
-        roundMatrix.mul(engine.state.lightSpaceMatrix, engine.state.lightSpaceMatrix);
+        roundMatrix.mul(lightSpaceMatrix, lightSpaceMatrix);
 
-        glViewport(0, 0, engine.state.SHADOW_WIDTH, engine.state.SHADOW_HEIGHT);
-        glBindFramebuffer(GL_FRAMEBUFFER, engine.state.depthFBO);
+        // ---------- 3. 뎁스 패스 (그림자 맵) ----------
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthFBO);
         glClear(GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(engine.state.depthShaderProgram);
-
-        glUniformMatrix4fv(engine.state.locDepthLightSpace, false,
-                engine.state.lightSpaceMatrix.get(engine.state.matrixBuffer));
+        glUseProgram(depthShaderProgram);
+        glUniformMatrix4fv(locDepthLightSpace, false, lightSpaceMatrix.get(matrixBuffer));
 
         glEnable(GL_CULL_FACE);
         glCullFace(GL_FRONT);
-        renderScene(engine.state.locDepthModel, false);
+        renderScene(locDepthModel, false);
         glCullFace(GL_BACK);
         glDisable(GL_CULL_FACE);
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        glViewport(0, 0, engine.state.width, engine.state.height);
+        // ---------- 4. 메인 패스 ----------
+        glViewport(0, 0, win.width, win.height);
         glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(engine.state.mainShaderProgram);
+        glUseProgram(mainShaderProgram);
 
+        // 투영 행렬 (원근 ↔ 직교 lerp)
         Matrix4f perspProj = new Matrix4f().setPerspective((float) Math.toRadians(60.0f),
-                (float) engine.state.width / engine.state.height, 0.1f, 100.0f);
+                (float) win.width / win.height, 0.1f, 100.0f);
         float orthoSize = 6.0f;
-        Matrix4f orthoProj = new Matrix4f().setOrtho(-orthoSize * ((float) engine.state.width / engine.state.height),
-                orthoSize * ((float) engine.state.width / engine.state.height), -orthoSize, orthoSize, 0.1f, 100.0f);
-        engine.state.projMatrix.set(perspProj).lerp(orthoProj, engine.state.orthoTransition);
+        Matrix4f orthoProj = new Matrix4f().setOrtho(
+                -orthoSize * ((float) win.width / win.height),
+                orthoSize * ((float) win.width / win.height),
+                -orthoSize, orthoSize, 0.1f, 100.0f);
+        projMatrix.set(perspProj).lerp(orthoProj, camera.orthoTransition);
 
-        // 에딧 모드 플레이 모드 카메라 분리
-        if (engine.state.isEditorMode.get()) {
-            float fx = (float) (Math.sin(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
-            float fy = (float) -Math.sin(engine.state.editorCamPitch);
-            float fz = (float) (-Math.cos(engine.state.editorCamYaw) * Math.cos(engine.state.editorCamPitch));
-            Vector3f eye = engine.state.editorCamPos;
+        // 뷰 행렬 (에디터 ↔ 플레이 분기)
+        if (camera.isEditorMode.get()) {
+            float fx = (float) (Math.sin(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
+            float fy = (float) -Math.sin(camera.editorCamPitch);
+            float fz = (float) (-Math.cos(camera.editorCamYaw) * Math.cos(camera.editorCamPitch));
+            Vector3f eye = camera.editorCamPos;
             Vector3f center = new Vector3f(eye).add(fx, fy, fz);
-            engine.state.viewMatrix.identity().lookAt(eye, center, new Vector3f(0, 1, 0));
+            viewMatrix.identity().lookAt(eye, center, new Vector3f(0, 1, 0));
         } else {
-            engine.state.viewMatrix.identity()
-                    .translate(0, 0, -engine.state.camDistance)
-                    .rotateX(engine.state.camPitch)
-                    .rotateY(engine.state.camYaw)
-                    .translate(-engine.state.smoothCamPos.x, -engine.state.smoothCamPos.y,
-                            -engine.state.smoothCamPos.z);
+            viewMatrix.identity()
+                    .translate(0, 0, -camera.camDistance)
+                    .rotateX(camera.camPitch)
+                    .rotateY(camera.camYaw)
+                    .translate(-camera.smoothCamPos.x, -camera.smoothCamPos.y, -camera.smoothCamPos.z);
         }
 
-        glUniformMatrix4fv(engine.state.locProj, false, engine.state.projMatrix.get(engine.state.matrixBuffer));
-        glUniformMatrix4fv(engine.state.locView, false, engine.state.viewMatrix.get(engine.state.matrixBuffer));
-        glUniformMatrix4fv(engine.state.locLightSpaceMatrix, false,
-                engine.state.lightSpaceMatrix.get(engine.state.matrixBuffer));
+        glUniformMatrix4fv(locProj, false, projMatrix.get(matrixBuffer));
+        glUniformMatrix4fv(locView, false, viewMatrix.get(matrixBuffer));
+        glUniformMatrix4fv(locLightSpaceMatrix, false, lightSpaceMatrix.get(matrixBuffer));
 
-        glUniform3f(engine.state.locLightPos, engine.state.lightPos.x, engine.state.lightPos.y,
-                engine.state.lightPos.z);
-        glUniform1f(engine.state.locLightAmbient, engine.state.lightAmbient);
-        glUniform1f(engine.state.locLightDiffuse, engine.state.lightDiffuse);
+        glUniform3f(locLightPos, light.lightPos.x, light.lightPos.y, light.lightPos.z);
+        glUniform1f(locLightAmbient, light.lightAmbient);
+        glUniform1f(locLightDiffuse, light.lightDiffuse);
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, engine.state.depthMap);
-        glUniform1i(engine.state.locShadowMap, 0);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        glUniform1i(locShadowMap, 0);
 
-        engine.state.editorInvVPMatrix.set(engine.state.projMatrix).mul(engine.state.viewMatrix).invert();
+        // 기즈모 피킹용 역 VP 행렬을 카메라 컴포넌트에 기록
+        // (EditorGizmoSystem이 다음 프레임 update에서 사용)
+        camera.editorInvVPMatrix.set(projMatrix).mul(viewMatrix).invert();
 
-        renderScene(engine.state.locModel, true);
+        // ---------- 5. 씬 렌더 ----------
+        renderScene(locModel, true);
 
-        // 에디터 모드에서 오브젝트 선택 시 하이라이트 및 기즈모 렌더링
-        if (engine.state.selectedObjectIndex >= 0 && engine.state.selectedObjectIndex < engine.state.objects.size()) {
-            glDisable(GL_DEPTH_TEST); // ← 추가: 기즈모/하이라이트가 오브젝트에 안 가려지게
-            glLineWidth(4.0f);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-            LevelObject selObj = engine.state.objects.get(engine.state.selectedObjectIndex);
-            Matrix4f model = new Matrix4f();
-            model.translate(selObj.pos.x, selObj.pos.y, selObj.pos.z)
-                    .rotateX(selObj.rotation.x)
-                    .rotateY(selObj.rotation.y)
-                    .rotateZ(selObj.rotation.z);
-
-            if (selObj instanceof PlayerObject) {
-                model.scale((selObj.size.x * engine.state.scaleX) * 1.02f,
-                        (selObj.size.y * engine.state.scaleY) * 1.02f, (selObj.size.z * engine.state.scaleZ) * 1.02f);
-            } else {
-                model.scale(selObj.size.x * 1.02f, selObj.size.y * 1.02f, selObj.size.z * 1.02f);
-            }
-
-            // 하이라이트 박스 (노란색)
-            glUniform1i(engine.state.locUseLighting, 0);
-            glUniform3f(engine.state.locObjectColor, 1.0f, 1.0f, 0.0f);
-            glUniformMatrix4fv(engine.state.locModel, false, model.get(engine.state.matrixBuffer));
-            if (selObj instanceof PlayerObject) {
-                drawSphereGeometry();
-            } else {
-                drawCubeGeometry();
-            }
-
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glLineWidth(1.0f);
-
-            // ==========================================
-            // [핵심 수정] 기즈모 모드 렌더링 매트릭스 설정
-            // ==========================================
-            Matrix4f gizmoBase = new Matrix4f().translate(selObj.pos.x, selObj.pos.y, selObj.pos.z);
-
-            // 로컬 기즈모 모드일 경우, 오브젝트의 회전값을 기즈모 베이스에 적용!
-            if (engine.state.isLocalGizmo) {
-                gizmoBase.rotateX(selObj.rotation.x)
-                        .rotateY(selObj.rotation.y)
-                        .rotateZ(selObj.rotation.z);
-            }
-
-            if (engine.state.gizmoMode == 0) {
-                // --- 1. POSITION 기즈모 (직선 형태) ---
-                glLineWidth(5.0f);
-
-                // X축
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 1 ? 1.0f : 1.0f,
-                        engine.state.activeGizmoAxis == 1 ? 1.0f : 0.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(2, 0, 0);
-                glEnd();
-
-                // Y축
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 2 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 2 ? 1.0f : 1.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(0, 2, 0);
-                glEnd();
-
-                // Z축
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f, 1.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(0, 0, 2);
-                glEnd();
-
-                glLineWidth(1.0f);
-
-            } else if (engine.state.gizmoMode == 1) {
-                // --- 2. SCALE 기즈모 (선 끝에 작은 큐브가 달린 형태) ---
-                glLineWidth(3.0f);
-
-                // X축 선 및 큐브 핸들
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 1 ? 1.0f : 1.0f,
-                        engine.state.activeGizmoAxis == 1 ? 1.0f : 0.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(2, 0, 0);
-                glEnd();
-
-                Matrix4f cubeX = new Matrix4f(gizmoBase).translate(2, 0, 0).scale(0.3f);
-                glUniformMatrix4fv(engine.state.locModel, false, cubeX.get(engine.state.matrixBuffer));
-                drawCubeGeometry();
-
-                // Y축 선 및 큐브 핸들
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 2 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 2 ? 1.0f : 1.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(0, 2, 0);
-                glEnd();
-
-                Matrix4f cubeY = new Matrix4f(gizmoBase).translate(0, 2, 0).scale(0.3f);
-                glUniformMatrix4fv(engine.state.locModel, false, cubeY.get(engine.state.matrixBuffer));
-                drawCubeGeometry();
-
-                // Z축 선 및 큐브 핸들
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f, 1.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINES);
-                glVertex3f(0, 0, 0);
-                glVertex3f(0, 0, 2);
-                glEnd();
-
-                Matrix4f cubeZ = new Matrix4f(gizmoBase).translate(0, 0, 2).scale(0.3f);
-                glUniformMatrix4fv(engine.state.locModel, false, cubeZ.get(engine.state.matrixBuffer));
-                drawCubeGeometry();
-
-                glLineWidth(1.0f);
-
-            } else if (engine.state.gizmoMode == 2) {
-                // --- 3. ROTATION 기즈모 (둥근 원형 링 형태) ---
-                glLineWidth(3.0f);
-                float radius = 2.0f;
-                int segments = 32;
-
-                // X축 회전 링 (YZ 평면)
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 1 ? 1.0f : 1.0f,
-                        engine.state.activeGizmoAxis == 1 ? 1.0f : 0.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINE_LOOP);
-                for (int i = 0; i < segments; i++) {
-                    float angle = (float) (2.0f * Math.PI * i / segments);
-                    float y = radius * (float) Math.cos(angle);
-                    float z = radius * (float) Math.sin(angle);
-                    glVertex3f(0.0f, y, z);
-                }
-                glEnd();
-
-                // Y축 회전 링 (XZ 평면)
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 2 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 2 ? 1.0f : 1.0f, 0.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINE_LOOP);
-                for (int i = 0; i < segments; i++) {
-                    float angle = (float) (2.0f * Math.PI * i / segments);
-                    float x = radius * (float) Math.cos(angle);
-                    float z = radius * (float) Math.sin(angle);
-                    glVertex3f(x, 0.0f, z);
-                }
-                glEnd();
-
-                // Z축 회전 링 (XY 평면)
-                glUniform3f(engine.state.locObjectColor, engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f,
-                        engine.state.activeGizmoAxis == 3 ? 1.0f : 0.0f, 1.0f);
-                glUniformMatrix4fv(engine.state.locModel, false, gizmoBase.get(engine.state.matrixBuffer));
-                glBegin(GL_LINE_LOOP);
-                for (int i = 0; i < segments; i++) {
-                    float angle = (float) (2.0f * Math.PI * i / segments);
-                    float x = radius * (float) Math.cos(angle);
-                    float y = radius * (float) Math.sin(angle);
-                    glVertex3f(x, y, 0.0f);
-                }
-                glEnd();
-
-                glLineWidth(1.0f);
-            }
-
-            glUniform1i(engine.state.locUseLighting, 1);
-
-            glEnable(GL_DEPTH_TEST); // ← 추가: 다음 프레임 일반 렌더링을 위해 복구
-        }
+        // ---------- 6. 선택 오브젝트 하이라이트 + 기즈모 ----------
+        renderEditorOverlay();
 
         glUseProgram(0);
     }
 
-    public void renderScene(int modelLoc, boolean isMainPass) {
-        engine.state.modelMatrix.identity();
-        glUniformMatrix4fv(modelLoc, false, engine.state.modelMatrix.get(engine.state.matrixBuffer));
+    // ============================================================
+    // 씬 렌더 (뎁스 패스 / 메인 패스 공용)
+    // ============================================================
+    private void renderScene(int modelLoc, boolean isMainPass) {
+        modelMatrix.identity();
+        glUniformMatrix4fv(modelLoc, false, modelMatrix.get(matrixBuffer));
 
         if (isMainPass) {
-            glUniform3f(engine.state.locObjectColor, 0.5f, 0.5f, 0.5f);
-            glUniform1i(engine.state.locUseLighting, 1);
+            glUniform3f(locObjectColor, 0.5f, 0.5f, 0.5f);
+            glUniform1i(locUseLighting, 1);
         }
         drawGroundGeometry();
 
         if (isMainPass) {
-            glUniform3f(engine.state.locObjectColor, 0.0f, 0.0f, 0.0f);
-            glUniform1i(engine.state.locUseLighting, 0);
+            glUniform3f(locObjectColor, 0.0f, 0.0f, 0.0f);
+            glUniform1i(locUseLighting, 0);
             drawGridGeometry();
-            glUniform1i(engine.state.locUseLighting, 1);
+            glUniform1i(locUseLighting, 1);
         }
 
-        for (LevelObject obj : engine.state.objects) {
-            engine.state.modelMatrix.identity()
+        for (LevelObject obj : world.objects) {
+            modelMatrix.identity()
                     .translate(obj.pos.x, obj.pos.y, obj.pos.z)
                     .rotateX(obj.rotation.x)
                     .rotateY(obj.rotation.y)
                     .rotateZ(obj.rotation.z);
 
             if (obj instanceof PlayerObject) {
-                engine.state.modelMatrix.scale(obj.size.x * engine.state.scaleX, obj.size.y * engine.state.scaleY,
-                        obj.size.z * engine.state.scaleZ);
+                modelMatrix.scale(obj.size.x * physics.scaleX,
+                                  obj.size.y * physics.scaleY,
+                                  obj.size.z * physics.scaleZ);
                 if (isMainPass) {
-                    if (engine.state.isGrounded)
-                        glUniform3f(engine.state.locObjectColor, 0.2f, 0.9f, 1.0f);
+                    if (physics.isGrounded)
+                        glUniform3f(locObjectColor, 0.2f, 0.9f, 1.0f);
                     else
-                        glUniform3f(engine.state.locObjectColor, 0.1f, 0.6f, 1.0f);
+                        glUniform3f(locObjectColor, 0.1f, 0.6f, 1.0f);
                 }
             } else if (obj instanceof BlockObject) {
-                engine.state.modelMatrix.scale(obj.size.x, obj.size.y, obj.size.z);
+                modelMatrix.scale(obj.size.x, obj.size.y, obj.size.z);
                 if (isMainPass) {
-                    glUniform3f(engine.state.locObjectColor, 0.95f, 0.5f, 0.2f);
+                    glUniform3f(locObjectColor, 0.95f, 0.5f, 0.2f);
                 }
             }
 
-            glUniformMatrix4fv(modelLoc, false, engine.state.modelMatrix.get(engine.state.matrixBuffer));
+            glUniformMatrix4fv(modelLoc, false, modelMatrix.get(matrixBuffer));
             if (obj instanceof PlayerObject) {
                 drawSphereGeometry();
             } else {
@@ -492,27 +395,223 @@ public class EngineRenderer implements EngineSystem {
         }
     }
 
-    public void drawCubeGeometry() {
+    // ============================================================
+    // 에디터 오버레이 (하이라이트 + 기즈모)
+    // ============================================================
+    private void renderEditorOverlay() {
+        if (editor.selectedObjectIndex < 0 || editor.selectedObjectIndex >= world.objects.size()) {
+            return;
+        }
+
+        glDisable(GL_DEPTH_TEST); // 기즈모/하이라이트가 오브젝트에 가려지지 않도록
+        glLineWidth(4.0f);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+        LevelObject selObj = world.objects.get(editor.selectedObjectIndex);
+
+        // ---------- 하이라이트 박스 ----------
+        Matrix4f highlight = new Matrix4f();
+        highlight.translate(selObj.pos.x, selObj.pos.y, selObj.pos.z)
+                .rotateX(selObj.rotation.x)
+                .rotateY(selObj.rotation.y)
+                .rotateZ(selObj.rotation.z);
+
+        if (selObj instanceof PlayerObject) {
+            highlight.scale(
+                    (selObj.size.x * physics.scaleX) * 1.02f,
+                    (selObj.size.y * physics.scaleY) * 1.02f,
+                    (selObj.size.z * physics.scaleZ) * 1.02f);
+        } else {
+            highlight.scale(selObj.size.x * 1.02f, selObj.size.y * 1.02f, selObj.size.z * 1.02f);
+        }
+
+        glUniform1i(locUseLighting, 0);
+        glUniform3f(locObjectColor, 1.0f, 1.0f, 0.0f);
+        glUniformMatrix4fv(locModel, false, highlight.get(matrixBuffer));
+        if (selObj instanceof PlayerObject) {
+            drawSphereGeometry();
+        } else {
+            drawCubeGeometry();
+        }
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glLineWidth(1.0f);
+
+        // ---------- 기즈모 베이스 행렬 ----------
+        Matrix4f gizmoBase = new Matrix4f().translate(selObj.pos.x, selObj.pos.y, selObj.pos.z);
+        if (editor.isLocalGizmo) {
+            gizmoBase.rotateX(selObj.rotation.x)
+                    .rotateY(selObj.rotation.y)
+                    .rotateZ(selObj.rotation.z);
+        }
+
+        if (editor.gizmoMode == 0) {
+            renderPositionGizmo(gizmoBase);
+        } else if (editor.gizmoMode == 1) {
+            renderScaleGizmo(gizmoBase);
+        } else if (editor.gizmoMode == 2) {
+            renderRotationGizmo(gizmoBase);
+        }
+
+        glUniform1i(locUseLighting, 1);
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    // ---------- 위치 기즈모 (직선 3축) ----------
+    private void renderPositionGizmo(Matrix4f base) {
+        glLineWidth(5.0f);
+
+        // X축
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 1 ? 1.0f : 1.0f,
+                editor.activeGizmoAxis == 1 ? 1.0f : 0.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(2, 0, 0);
+        glEnd();
+
+        // Y축
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 2 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 2 ? 1.0f : 1.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(0, 2, 0);
+        glEnd();
+
+        // Z축
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                1.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(0, 0, 2);
+        glEnd();
+
+        glLineWidth(1.0f);
+    }
+
+    // ---------- 스케일 기즈모 (선 + 큐브 핸들) ----------
+    private void renderScaleGizmo(Matrix4f base) {
+        glLineWidth(3.0f);
+
+        // X축 + 큐브
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 1 ? 1.0f : 1.0f,
+                editor.activeGizmoAxis == 1 ? 1.0f : 0.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(2, 0, 0);
+        glEnd();
+        Matrix4f cubeX = new Matrix4f(base).translate(2, 0, 0).scale(0.3f);
+        glUniformMatrix4fv(locModel, false, cubeX.get(matrixBuffer));
+        drawCubeGeometry();
+
+        // Y축 + 큐브
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 2 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 2 ? 1.0f : 1.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(0, 2, 0);
+        glEnd();
+        Matrix4f cubeY = new Matrix4f(base).translate(0, 2, 0).scale(0.3f);
+        glUniformMatrix4fv(locModel, false, cubeY.get(matrixBuffer));
+        drawCubeGeometry();
+
+        // Z축 + 큐브
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                1.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINES);
+        glVertex3f(0, 0, 0); glVertex3f(0, 0, 2);
+        glEnd();
+        Matrix4f cubeZ = new Matrix4f(base).translate(0, 0, 2).scale(0.3f);
+        glUniformMatrix4fv(locModel, false, cubeZ.get(matrixBuffer));
+        drawCubeGeometry();
+
+        glLineWidth(1.0f);
+    }
+
+    // ---------- 회전 기즈모 (3개의 링) ----------
+    private void renderRotationGizmo(Matrix4f base) {
+        glLineWidth(3.0f);
+        float radius = 2.0f;
+        int segments = 32;
+
+        // X축 회전 링 (YZ 평면)
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 1 ? 1.0f : 1.0f,
+                editor.activeGizmoAxis == 1 ? 1.0f : 0.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; i++) {
+            float angle = (float) (2.0f * Math.PI * i / segments);
+            glVertex3f(0.0f, radius * (float) Math.cos(angle), radius * (float) Math.sin(angle));
+        }
+        glEnd();
+
+        // Y축 회전 링 (XZ 평면)
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 2 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 2 ? 1.0f : 1.0f,
+                0.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; i++) {
+            float angle = (float) (2.0f * Math.PI * i / segments);
+            glVertex3f(radius * (float) Math.cos(angle), 0.0f, radius * (float) Math.sin(angle));
+        }
+        glEnd();
+
+        // Z축 회전 링 (XY 평면)
+        glUniform3f(locObjectColor,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                editor.activeGizmoAxis == 3 ? 1.0f : 0.0f,
+                1.0f);
+        glUniformMatrix4fv(locModel, false, base.get(matrixBuffer));
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; i++) {
+            float angle = (float) (2.0f * Math.PI * i / segments);
+            glVertex3f(radius * (float) Math.cos(angle), radius * (float) Math.sin(angle), 0.0f);
+        }
+        glEnd();
+
+        glLineWidth(1.0f);
+    }
+
+    // ============================================================
+    // 지오메트리
+    // ============================================================
+    private void drawCubeGeometry() {
         glBegin(GL_QUADS);
-        for (int i = 0; i < engine.state.faces.length; i++) {
-            glNormal3f(engine.state.normals[i][0], engine.state.normals[i][1], engine.state.normals[i][2]);
-            for (int vertIndex : engine.state.faces[i]) {
-                glVertex3f(engine.state.vertices[vertIndex][0], engine.state.vertices[vertIndex][1],
-                        engine.state.vertices[vertIndex][2]);
+        for (int i = 0; i < CUBE_FACES.length; i++) {
+            glNormal3f(CUBE_NORMALS[i][0], CUBE_NORMALS[i][1], CUBE_NORMALS[i][2]);
+            for (int vertIndex : CUBE_FACES[i]) {
+                glVertex3f(CUBE_VERTICES[vertIndex][0],
+                           CUBE_VERTICES[vertIndex][1],
+                           CUBE_VERTICES[vertIndex][2]);
             }
         }
         glEnd();
     }
 
-    public void drawSphereGeometry() {
+    private void drawSphereGeometry() {
         int stacks = 20;
         int slices = 20;
-        float radius = 0.5f; // 큐브(-0.5~0.5)랑 크기 맞춤
+        float radius = 0.5f;
 
         for (int i = 0; i < stacks; i++) {
             float lat0 = (float) Math.PI * (-0.5f + (float) i / stacks);
             float lat1 = (float) Math.PI * (-0.5f + (float) (i + 1) / stacks);
-
             float y0 = (float) Math.sin(lat0), r0 = (float) Math.cos(lat0);
             float y1 = (float) Math.sin(lat1), r1 = (float) Math.cos(lat1);
 
@@ -534,7 +633,7 @@ public class EngineRenderer implements EngineSystem {
         }
     }
 
-    public void drawGroundGeometry() {
+    private void drawGroundGeometry() {
         glBegin(GL_QUADS);
         glNormal3f(0, 1, 0);
         glVertex3f(-30.0f, 0.0f, -30.0f);
@@ -544,7 +643,7 @@ public class EngineRenderer implements EngineSystem {
         glEnd();
     }
 
-    public void drawGridGeometry() {
+    private void drawGridGeometry() {
         glBegin(GL_LINES);
         for (int i = -30; i <= 30; i++) {
             glVertex3f(-30, 0.001f, i);
@@ -554,5 +653,4 @@ public class EngineRenderer implements EngineSystem {
         }
         glEnd();
     }
-
 }

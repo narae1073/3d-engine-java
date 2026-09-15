@@ -1,49 +1,45 @@
 import static org.lwjgl.glfw.GLFW.*;
-import static org.lwjgl.opengl.GL11.*;
 
 public class EngineInputSystem implements EngineSystem {
-    private final Engine3DLWJGL engine;
+    private final WindowContext win;
+    private final InputState input;
 
-    public EngineInputSystem(Engine3DLWJGL engine) {
-        this.engine = engine;
+    public EngineInputSystem(WindowContext win, InputState input) {
+        this.win = win;
+        this.input = input;
     }
 
     @Override
     public void init() {
-        configureCallbacks();
-    }
-
-    public void configureCallbacks() {
-        glfwSetKeyCallback(engine.state.window, (win, key, scancode, action, mods) -> {
+        glfwSetKeyCallback(win.window, (w, key, sc, action, mods) -> {
             boolean isPressed = (action != GLFW_RELEASE);
-            if (key == GLFW_KEY_W) engine.state.w = isPressed;
-            if (key == GLFW_KEY_A) engine.state.a = isPressed;
-            if (key == GLFW_KEY_S) engine.state.s = isPressed;
-            if (key == GLFW_KEY_D) engine.state.d = isPressed;
-            if (key == GLFW_KEY_SPACE) engine.state.space = isPressed;
+            if (key == GLFW_KEY_W) input.w = isPressed;
+            if (key == GLFW_KEY_A) input.a = isPressed;
+            if (key == GLFW_KEY_S) input.s = isPressed;
+            if (key == GLFW_KEY_D) input.d = isPressed;
+            if (key == GLFW_KEY_SPACE) input.space = isPressed;
 
             if (key == GLFW_KEY_TAB && action == GLFW_PRESS) {
-                engine.state.isUiMode = !engine.state.isUiMode;
-                glfwSetInputMode(engine.state.window, GLFW_CURSOR, engine.state.isUiMode ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
-                engine.state.lastMouseX = -1;
-                engine.state.lastMouseY = -1;
+                input.isUiMode = !input.isUiMode;
+                glfwSetInputMode(win.window, GLFW_CURSOR,
+                        input.isUiMode ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                input.lastMouseX = -1;
+                input.lastMouseY = -1;
             }
         });
 
-        glfwSetInputMode(engine.state.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        glfwSetCursorPosCallback(engine.state.window, (win, xpos, ypos) -> {
-            if (engine.state.lastMouseX == -1) {
-                engine.state.lastMouseX = xpos;
-                engine.state.lastMouseY = ypos;
+        glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        glfwSetCursorPosCallback(win.window, (w, xpos, ypos) -> {
+            if (input.lastMouseX == -1) {
+                input.lastMouseX = xpos;
+                input.lastMouseY = ypos;
             }
-
-            if (!engine.state.isUiMode) {
-                engine.state.mouseDeltaX += xpos - engine.state.lastMouseX;
-                engine.state.mouseDeltaY += ypos - engine.state.lastMouseY;
+            if (!input.isUiMode) {
+                input.mouseDeltaX += xpos - input.lastMouseX;
+                input.mouseDeltaY += ypos - input.lastMouseY;
             }
-
-            engine.state.lastMouseX = xpos;
-            engine.state.lastMouseY = ypos;
+            input.lastMouseX = xpos;
+            input.lastMouseY = ypos;
         });
     }
 }

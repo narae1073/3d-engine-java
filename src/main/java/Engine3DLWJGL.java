@@ -10,90 +10,73 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 
 public class Engine3DLWJGL {
     public final EngineState state = new EngineState();
-    // 무상태 서비스 — 생명주기 대상이 아니라 Engine이 소유하고 로직 계층에 주입
-    public final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(this);
 
-    // 등록 순서 = init() 호출 순서 = 프레임당 update(dt)/render() 호출 순서
+    // 컴포넌트 DI를 위한 편의 접근 (선택)
+    private final WindowContext win = state.window;
+    private final InputState input = state.input;
+    private final CameraState camera = state.camera;
+    private final LightState light = state.light;
+    private final PhysicsState physics = state.physics;
+    private final EditorState editor = state.editor;
+    private final WorldState world = state.world;
+
+    private final EngineCollisionSystem collisionSystem = new EngineCollisionSystem(world);
+
     private final List<EngineSystem> systems = new ArrayList<>();
-
     private double lastFrameTime = 0.0;
 
     public Engine3DLWJGL() {
-        systems.add(new EngineInputSystem(this));
-        systems.add(new EngineGameSystem(this));
-        systems.add(new EngineRenderer(this));
-        systems.add(new EngineUiSystem(this));
-        systems.add(new EditorGizmoSystem(this));
+        // 의존성 명시적 주입 — 각 시스템이 필요한 컴포넌트만 받음
+        systems.add(new EngineInputSystem(win, input));
+        systems.add(new EngineGameSystem(win, input, camera, physics, world, collisionSystem));
+        systems.add(new EngineRenderer(win, camera, light, physics, editor, world));
+        systems.add(new EngineUiSystem(state, camera, light, physics, editor, world));
+        systems.add(new EditorGizmoSystem(win, camera, editor, world));
     }
 
-    public long getWindow() {
-        return state.window;
-    }
-
-    public void run() {
-        init();
-        loop();
-        cleanup();
-    }
+    public void run() { init(); loop(); cleanup(); }
 
     private void init() {
-        if (!glfwInit())
-            throw new IllegalStateException("GLFW 초기화 실패");
-
-        state.window = glfwCreateWindow(state.width, state.height, "3D Engine - Shadows & Slime Integrated", NULL, NULL);
-        glfwMakeContextCurrent(state.window);
+        if (!glfwInit()) throw new IllegalStateException("GLFW 초기화 실패");
+        win.window = glfwCreateWindow(win.width, win.height,
+                "3D Engine - Shadows & Slime Integrated", NULL, NULL);
+        glfwMakeContextCurrent(win.window);
         glfwSwapInterval(1);
         GL.createCapabilities();
 
         ImGui.createContext();
-        state.imGuiGlfw.init(state.window, true);
+        state.imGuiGlfw.init(win.window, true);
         state.imGuiGl3.init("#version 120");
-
         glEnable(GL_DEPTH_TEST);
+        if (glfwRawMouseMotionSupported())
+            glfwSetInputMode(win.window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
 
-        if (glfwRawMouseMotionSupported()) {
-            glfwSetInputMode(state.window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
-        }
-
-        // GLFW/GL/ImGui 부트스트랩 완료 후, 등록된 시스템 순서대로 초기화
-        for (EngineSystem s : systems) {
-            s.init();
-        }
+        for (EngineSystem s : systems) s.init();
     }
 
     private void update() {
         float dt = computeDeltaTime();
-        for (EngineSystem s : systems) {
-            s.update(dt);
-        }
+        for (EngineSystem s : systems) s.update(dt);
     }
 
     private void render() {
-        for (EngineSystem s : systems) {
-            s.render();
-        }
+        for (EngineSystem s : systems) s.render();
     }
 
     private void loop() {
-        while (!glfwWindowShouldClose(state.window)) {
-            update();
-            render();
-            glfwSwapBuffers(state.window);
+        while (!glfwWindowShouldClose(win.window)) {
+            update(); render();
+            glfwSwapBuffers(win.window);
             glfwPollEvents();
         }
     }
 
     private void cleanup() {
-        // 등록 역순 dispose — 나중에 초기화된 시스템부터 정리
-        for (int i = systems.size() - 1; i >= 0; i--) {
-            systems.get(i).dispose();
-        }
-
+        for (int i = systems.size() - 1; i >= 0; i--) systems.get(i).dispose();
         state.imGuiGl3.dispose();
         state.imGuiGlfw.dispose();
         ImGui.destroyContext();
-
-        glfwDestroyWindow(state.window);
+        glfwDestroyWindow(win.window);
         glfwTerminate();
     }
 
@@ -101,10 +84,8 @@ public class Engine3DLWJGL {
         double now = glfwGetTime();
         float dt = (float) (now - lastFrameTime);
         lastFrameTime = now;
-        return Math.min(dt, 0.05f); // 프레임 스파이크 방지 (최소 20fps 기준 클램프)
+        return Math.min(dt, 0.05f);
     }
 
-    public static void main(String[] args) {
-        new Engine3DLWJGL().run();
-    }
+    public static void main(String[] args) { new Engine3DLWJGL().run(); }
 }
